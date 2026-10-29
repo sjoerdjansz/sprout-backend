@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Interest;
 use App\Models\User;
+use App\Models\UserSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -29,6 +31,22 @@ class AuthenticatedUserTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('id', $user->id)
             ->assertJsonMissingPath('password');
+    }
+
+    public function test_profile_includes_the_sign_up_preferences_from_the_settings(): void
+    {
+        $user = User::factory()->create();
+        UserSetting::factory()->for($user)->create([
+            'interests' => [Interest::Maths, Interest::History],
+            'wants_daily_reminder' => true,
+        ]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/user');
+
+        $response->assertOk()
+            ->assertJsonPath('interests', ['maths', 'history'])
+            ->assertJsonPath('wants_daily_reminder', true);
     }
 
     public function test_user_can_authenticate_with_a_personal_access_token(): void

@@ -24,8 +24,9 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'email_verified_at' => $this->email_verified_at,
-            'interests' => $this->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
-            'wants_daily_reminder' => $this->wants_daily_reminder,
+            // Sign up preferences live in user_settings; the response shape stays as documented in API.md.
+            'interests' => $this->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
+            'wants_daily_reminder' => $this->settings?->wants_daily_reminder ?? false,
             'created_at' => $this->created_at,
         ];
     }

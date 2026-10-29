@@ -21,8 +21,6 @@ class UserFactory extends Factory
             'name' => fake()->firstName(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
-            'interests' => [],
-            'wants_daily_reminder' => false,
         ];
     }
 

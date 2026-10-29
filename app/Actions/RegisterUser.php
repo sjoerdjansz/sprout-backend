@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Enums\Interest;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class RegisterUser
 {
@@ -24,12 +25,16 @@ class RegisterUser
             return;
         }
 
-        $user = User::create([
-            'name' => $name,
-            'email' => $email,
-            'interests' => $interests,
-            'wants_daily_reminder' => $wantsDailyReminder,
-        ]);
+        $user = DB::transaction(function () use ($name, $email, $interests, $wantsDailyReminder): User {
+            $user = User::create(['name' => $name, 'email' => $email]);
+
+            $user->settings()->create([
+                'interests' => $interests,
+                'wants_daily_reminder' => $wantsDailyReminder,
+            ]);
+
+            return $user;
+        });
 
         $this->sendMagicLink->handle($user);
     }
