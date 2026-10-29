@@ -1,0 +1,349 @@
+// Sprout database design: the schema we are building towards.
+// Format: DBML (https://dbml.dbdiagram.io/docs). Paste into https://dbdiagram.io to see it as a diagram.
+// Every table note starts with its status: BUILT (a migration exists) or DRAFT (still being designed).
+// Migrations remain the source of truth for what exists; update this file in the same change as a migration.
+// Laravel conventions: bigint `id`, `created_at`/`updated_at` timestamps, foreign keys `<model>_id`.
+//
+// Decisions (2026-10-29):
+// - Everything a learner creates belongs to one user; there is no shared catalogue.
+// - Two levels: topic -> subtopics. Mastery is tracked per subtopic; a topic's mastery is the aggregate.
+// - Flashcards and questions are separate: cards are scheduled with SM-2, questions are answered and graded.
+// - Raw events (flashcard_reviews, answers) are the source of truth; subtopic_progress and daily_activity
+//   are derived from them and stored so screens stay fast.
+// - "Prompts" means the chat history: study_sessions + messages. Prompt templates live in code.
+// - One AI key per provider per user; token usage is logged per tutor message so learners see their costs.
+// - Deleting: every foreign key cascades on delete unless its note says otherwise, so deleting a user or a
+//   topic erases everything under it (GDPR). Archiving a topic only hides it.
+
+Project sprout {
+  database_type: 'MySQL'
+  Note: 'MariaDB 11 locally; the test suite runs on in-memory SQLite, so stay compatible with both.'
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+Table users {
+  id bigint [pk, increment]
+  name varchar(255) [not null, note: 'First name, from "What should we call you?"']
+  email varchar(255) [not null, unique, note: 'Stored lowercase']
+  email_verified_at timestamp [null, note: 'Set when a magic link is opened']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Only the account; preferences are in user_settings. No password: sign in is passwordless.'
+}
+
+Table magic_link_tokens {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  token_hash varchar(64) [not null, unique, note: 'SHA-256 of the token in the email']
+  expires_at timestamp [not null, note: '15 minutes after sending']
+  used_at timestamp [null, note: 'Set on first use; a link works once']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT.'
+}
+
+Table personal_access_tokens {
+  id bigint [pk, increment]
+  tokenable_type varchar(255) [not null]
+  tokenable_id bigint [not null]
+  name text [not null]
+  token varchar(64) [not null, unique]
+  abilities text [null]
+  last_used_at timestamp [null]
+  expires_at timestamp [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (tokenable_type, tokenable_id)
+  }
+
+  Note: 'BUILT. Sanctum API tokens (polymorphic to users).'
+}
+
+Table user_settings {
+  id bigint [pk, increment]
+  user_id bigint [not null, unique, ref: - users.id]
+  interests json [null, note: 'Array of Interest enum values (languages, science, coding, history, maths, other), picked at sign up']
+  wants_daily_reminder boolean [not null, default: false]
+  timezone varchar(64) [not null, default: 'UTC', note: 'Needed for streaks, "due today" and reminder times']
+  daily_goal_cards smallint [not null, default: 20]
+  reminder_time time [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. One row per user, created at sign up. Keeps users about the account only.'
+}
+
+Table ai_credentials {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  provider ai_provider [not null]
+  encrypted_api_key text [not null, note: 'Laravel encrypted cast; never returned by the API']
+  key_last_four varchar(4) [not null, note: 'So the UI can show "sk-...abcd"']
+  model varchar(100) [null, note: 'Preferred model; null = provider default']
+  validated_at timestamp [null, note: 'Last successful check against the provider']
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, provider) [unique]
+  }
+
+  Note: 'BUILT. The user\'s own AI key (bring your own key).'
+}
+
+Enum ai_provider {
+  openai
+}
+
+// ---------------------------------------------------------------------------
+// What is being learned
+// ---------------------------------------------------------------------------
+
+Table topics {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  title varchar(255) [not null]
+  description text [null]
+  archived_at timestamp [null, note: 'Hidden from the topic list but restorable; deleting removes the row and everything under it']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Owned by one user; not a shared catalogue.'
+}
+
+Table subtopics {
+  id bigint [pk, increment]
+  topic_id bigint [not null, ref: > topics.id]
+  title varchar(255) [not null]
+  position smallint [not null, note: 'Order within the topic']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. The concepts a topic is split into; the unit mastery is tracked on.'
+}
+
+Table materials {
+  id bigint [pk, increment]
+  topic_id bigint [not null, ref: > topics.id]
+  original_filename varchar(255) [not null]
+  storage_path varchar(255) [not null]
+  mime_type varchar(100) [not null]
+  size_bytes int [not null]
+  extracted_text longtext [null, note: 'Text the tutor uses as source']
+  status material_status [not null, default: 'processing']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Uploaded notes and PDFs (MVP). Belongs to a topic; the tutor maps it onto subtopics itself.'
+}
+
+Enum material_status {
+  processing
+  ready
+  failed
+}
+
+// ---------------------------------------------------------------------------
+// The chat
+// ---------------------------------------------------------------------------
+
+Table study_sessions {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  topic_id bigint [null, ref: > topics.id, note: 'Null for a mixed (interleaved) review session. Cascades: deleting a topic deletes its sessions']
+  kind session_kind [not null]
+  started_at timestamp [not null]
+  ended_at timestamp [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. One chat conversation. Not in the first list; the chat needs somewhere to live.'
+}
+
+Enum session_kind {
+  learn
+  review
+}
+
+Table messages {
+  id bigint [pk, increment]
+  study_session_id bigint [not null, ref: > study_sessions.id]
+  role message_role [not null]
+  content text [not null]
+  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI)']
+  model varchar(100) [null, note: 'Tutor turns: the AI model that wrote it']
+  input_tokens int [null, note: 'Tutor turns: tokens billed to the learner\'s key']
+  output_tokens int [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. The chat history: every turn, user and tutor.'
+}
+
+Enum message_role {
+  user
+  tutor
+}
+
+Enum technique {
+  retrieval_practice
+  spaced_repetition
+  testing_effect
+  feynman
+  interleaving
+}
+
+// ---------------------------------------------------------------------------
+// Flashcards and spaced repetition
+// ---------------------------------------------------------------------------
+
+Table flashcards {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id, note: 'Duplicated from topic so "all cards due today" is one indexed query']
+  topic_id bigint [not null, ref: > topics.id]
+  subtopic_id bigint [null, ref: > subtopics.id]
+  front text [not null]
+  back text [not null]
+  origin content_origin [not null]
+  source_message_id bigint [null, ref: > messages.id, note: 'The chat turn it came from; null for cards the user made. Set null when that message is deleted']
+  due_at timestamp [not null, note: 'Next review moment']
+  interval_days int [not null, default: 0]
+  ease_factor decimal(4,2) [not null, default: 2.5]
+  repetitions int [not null, default: 0]
+  lapses int [not null, default: 0]
+  suspended_at timestamp [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, due_at)
+  }
+
+  Note: 'BUILT. SM-2 scheduling state lives on the card; history lives in flashcard_reviews.'
+}
+
+Enum content_origin {
+  user
+  ai
+}
+
+Table flashcard_reviews {
+  id bigint [pk, increment]
+  flashcard_id bigint [not null, ref: > flashcards.id]
+  study_session_id bigint [null, ref: > study_sessions.id, note: 'Set null when the session is deleted']
+  rating review_rating [not null]
+  interval_days_before int [not null]
+  interval_days_after int [not null]
+  reviewed_at timestamp [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. One row per review. Lets us prove retention over weeks and recompute schedules.'
+}
+
+Enum review_rating {
+  again
+  hard
+  good
+  easy
+}
+
+// ---------------------------------------------------------------------------
+// Questions, quizzes and the Feynman technique
+// ---------------------------------------------------------------------------
+
+Table questions {
+  id bigint [pk, increment]
+  topic_id bigint [not null, ref: > topics.id]
+  subtopic_id bigint [null, ref: > subtopics.id]
+  type question_type [not null]
+  prompt text [not null, note: 'The question, or the concept to explain for Feynman']
+  model_answer text [null, note: 'Reference answer for grading open questions']
+  origin content_origin [not null]
+  source_message_id bigint [null, ref: > messages.id, note: 'The chat turn it came from; null for questions the user made. Set null when that message is deleted']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Multiple choice, open (retrieval practice) and Feynman questions; answers belong to one.'
+}
+
+Enum question_type {
+  multiple_choice
+  open
+  feynman
+}
+
+Table question_options {
+  id bigint [pk, increment]
+  question_id bigint [not null, ref: > questions.id]
+  label text [not null]
+  is_correct boolean [not null]
+  explanation text [null, note: 'Why this option is right or wrong']
+  position smallint [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Only for multiple_choice questions.'
+}
+
+Table answers {
+  id bigint [pk, increment]
+  question_id bigint [not null, ref: > questions.id]
+  user_id bigint [not null, ref: > users.id]
+  study_session_id bigint [null, ref: > study_sessions.id, note: 'Set null when the session is deleted']
+  question_option_id bigint [null, ref: > question_options.id, note: 'The chosen option (multiple_choice)']
+  response text [null, note: 'The typed answer or explanation (open, feynman)']
+  score smallint [null, note: '0-100; null until graded']
+  is_correct boolean [null]
+  feedback text [null, note: 'Tutor feedback: what was right, the missing piece, what next']
+  gaps json [null, note: 'Feynman: the gaps the tutor highlighted']
+  answered_at timestamp [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. Every attempt is kept, also repeated ones.'
+}
+
+// ---------------------------------------------------------------------------
+// Progress
+// ---------------------------------------------------------------------------
+
+Table subtopic_progress {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  subtopic_id bigint [not null, ref: > subtopics.id]
+  mastery smallint [not null, default: 0, note: '0-100']
+  last_studied_at timestamp [null]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, subtopic_id) [unique]
+  }
+
+  Note: 'BUILT. Derived: recalculated from flashcard_reviews and answers after each one. Topic mastery = aggregate of its subtopics.'
+}
+
+Table daily_activities {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  activity_date date [not null, note: 'In the user\'s timezone']
+  xp_earned int [not null, default: 0]
+  cards_reviewed int [not null, default: 0]
+  questions_answered int [not null, default: 0]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, activity_date) [unique]
+  }
+
+  Note: 'BUILT. Derived: one row per active day. Streaks are consecutive dates, total XP is the sum.'
+}

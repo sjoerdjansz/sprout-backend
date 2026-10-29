@@ -30,8 +30,8 @@ class RegistrationTest extends TestCase
         $user = User::sole();
         $this->assertSame('Ada', $user->name);
         $this->assertSame('ada@example.com', $user->email);
-        $this->assertEquals([Interest::Science, Interest::Coding], $user->interests->all());
-        $this->assertTrue($user->wants_daily_reminder);
+        $this->assertEquals([Interest::Science, Interest::Coding], $user->settings->interests->all());
+        $this->assertTrue($user->settings->wants_daily_reminder);
         $this->assertNull($user->email_verified_at);
         $this->assertDatabaseCount('magic_link_tokens', 1);
 
@@ -47,8 +47,8 @@ class RegistrationTest extends TestCase
 
         $response->assertAccepted();
         $user = User::sole();
-        $this->assertCount(0, $user->interests);
-        $this->assertFalse($user->wants_daily_reminder);
+        $this->assertCount(0, $user->settings->interests);
+        $this->assertFalse($user->settings->wants_daily_reminder);
     }
 
     public function test_registering_an_existing_email_sends_a_sign_in_link_without_changing_the_account(): void
