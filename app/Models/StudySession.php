@@ -11,9 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * One chat conversation. A review session has no topic, because it mixes topics.
+ * One chat conversation. A review session has no topic, because it mixes topics. A learn session
+ * ("conversation" in the API) has no topic until it is saved, and is read-only after that.
  */
-#[Fillable(['user_id', 'topic_id', 'kind', 'started_at', 'ended_at'])]
+#[Fillable(['user_id', 'topic_id', 'kind', 'draft', 'started_at', 'ended_at'])]
 class StudySession extends Model
 {
     /** @use HasFactory<StudySessionFactory> */
@@ -43,6 +44,11 @@ class StudySession extends Model
         return $this->hasMany(Message::class);
     }
 
+    public function isSaved(): bool
+    {
+        return $this->ended_at !== null;
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -52,6 +58,7 @@ class StudySession extends Model
     {
         return [
             'kind' => SessionKind::class,
+            'draft' => 'array',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
         ];

@@ -14,6 +14,12 @@
 // - One AI key per provider per user; token usage is logged per tutor message so learners see their costs.
 // - Deleting: every foreign key cascades on delete unless its note says otherwise, so deleting a user or a
 //   topic erases everything under it (GDPR). Archiving a topic only hides it.
+//
+// Decisions (2026-10-30, specs/tutor-chat.md):
+// - A conversation with the tutor is a `learn` study session. It has no topic until it is saved; saving sets
+//   topic_id and ended_at, and a saved conversation is read-only. The tutor keeps a draft of the topic on it.
+// - One SMART goal per topic, as columns on topics. Subtopics keep the notes their cards are made from.
+// - Learners pick an AI level (low/medium/high); the models per level are configuration (config/ai.php).
 
 Project sprout {
   database_type: 'MySQL'
@@ -70,6 +76,7 @@ Table user_settings {
   id bigint [pk, increment]
   user_id bigint [not null, unique, ref: - users.id]
   interests json [null, note: 'Array of Interest enum values (languages, science, coding, history, maths, other), picked at sign up']
+  ai_level ai_level [not null, default: 'medium', note: 'How capable (and costly) the AI is; models per level in config/ai.php']
   wants_daily_reminder boolean [not null, default: false]
   timezone varchar(64) [not null, default: 'UTC', note: 'Needed for streaks, "due today" and reminder times']
   daily_goal_cards smallint [not null, default: 20]
@@ -80,13 +87,19 @@ Table user_settings {
   Note: 'BUILT. One row per user, created at sign up. Keeps users about the account only.'
 }
 
+Enum ai_level {
+  low
+  medium
+  high
+}
+
 Table ai_credentials {
   id bigint [pk, increment]
   user_id bigint [not null, ref: > users.id]
   provider ai_provider [not null]
   encrypted_api_key text [not null, note: 'Laravel encrypted cast; never returned by the API']
   key_last_four varchar(4) [not null, note: 'So the UI can show "sk-...abcd"']
-  model varchar(100) [null, note: 'Preferred model; null = provider default']
+  model varchar(100) [null, note: 'Unused: replaced by user_settings.ai_level. Drop it with the key feature']
   validated_at timestamp [null, note: 'Last successful check against the provider']
   created_at timestamp
   updated_at timestamp
@@ -111,6 +124,9 @@ Table topics {
   user_id bigint [not null, ref: > users.id]
   title varchar(255) [not null]
   description text [null]
+  goal text [null, note: 'The SMART goal: what the learner wants to know or be able to do. Required when saving from the chat']
+  goal_deadline date [null]
+  goal_recall_percentage tinyint [null, note: '1-100: the recall the learner wants to reach by the deadline']
   archived_at timestamp [null, note: 'Hidden from the topic list but restorable; deleting removes the row and everything under it']
   created_at timestamp
   updated_at timestamp
@@ -122,6 +138,7 @@ Table subtopics {
   id bigint [pk, increment]
   topic_id bigint [not null, ref: > topics.id]
   title varchar(255) [not null]
+  content text [null, note: 'What the tutor explained: the notes its cards and questions are made from']
   position smallint [not null, note: 'Order within the topic']
   created_at timestamp
   updated_at timestamp
@@ -159,12 +176,13 @@ Table study_sessions {
   user_id bigint [not null, ref: > users.id]
   topic_id bigint [null, ref: > topics.id, note: 'Null for a mixed (interleaved) review session. Cascades: deleting a topic deletes its sessions']
   kind session_kind [not null]
+  draft json [null, note: 'Learn sessions: the tutor\'s draft of the topic {title, goal {description, deadline, recall_percentage}, subtopics [{title, content}]}']
   started_at timestamp [not null]
-  ended_at timestamp [null]
+  ended_at timestamp [null, note: 'Learn sessions: set when saved to the knowledge map; read-only after that']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. One chat conversation. Not in the first list; the chat needs somewhere to live.'
+  Note: 'BUILT. One chat conversation ("conversation" in the API for learn sessions). topic_id is null for a mixed review, and for a learn session until it is saved.'
 }
 
 Enum session_kind {
@@ -177,7 +195,7 @@ Table messages {
   study_session_id bigint [not null, ref: > study_sessions.id]
   role message_role [not null]
   content text [not null]
-  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI)']
+  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI). Practice sessions only: null in a conversation with the tutor']
   model varchar(100) [null, note: 'Tutor turns: the AI model that wrote it']
   input_tokens int [null, note: 'Tutor turns: tokens billed to the learner\'s key']
   output_tokens int [null]

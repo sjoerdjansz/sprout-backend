@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AiLevel;
 use App\Enums\Interest;
 use Database\Factories\UserSettingFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * A learner's preferences: one row per user, created at sign up.
  */
-#[Fillable(['user_id', 'interests', 'wants_daily_reminder', 'timezone', 'daily_goal_cards', 'reminder_time'])]
+#[Fillable(['user_id', 'interests', 'ai_level', 'wants_daily_reminder', 'timezone', 'daily_goal_cards', 'reminder_time'])]
 class UserSetting extends Model
 {
     /** @use HasFactory<UserSettingFactory> */
@@ -36,6 +37,7 @@ class UserSetting extends Model
     {
         return [
             'interests' => AsEnumCollection::of(Interest::class),
+            'ai_level' => AiLevel::class,
             'wants_daily_reminder' => 'boolean',
             'daily_goal_cards' => 'integer',
         ];

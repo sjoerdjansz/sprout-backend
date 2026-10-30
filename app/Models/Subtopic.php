@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * A concept within a topic; the unit mastery is tracked on.
  */
-#[Fillable(['topic_id', 'title', 'position'])]
+#[Fillable(['topic_id', 'title', 'content', 'position'])]
 class Subtopic extends Model
 {
     /** @use HasFactory<SubtopicFactory> */

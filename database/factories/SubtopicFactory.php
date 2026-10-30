@@ -21,6 +21,7 @@ class SubtopicFactory extends Factory
         return [
             'topic_id' => Topic::factory(),
             'title' => fake()->words(3, true),
+            'content' => fake()->paragraph(),
             'position' => fake()->numberBetween(1, 10),
         ];
     }
