@@ -23,7 +23,7 @@ class StartConversation
      */
     public function handle(User $learner, string $firstMessage, ?Topic $topic): StudySession
     {
-        $topic?->load('subtopics');
+        $topic?->load('category', 'subtopics');
 
         $answer = $this->askTutor->handle(
             learner: $learner,
@@ -65,6 +65,7 @@ class StartConversation
     {
         return [
             'title' => $topic->title,
+            'category' => $topic->category->name,
             'goal' => [
                 'description' => $topic->goal,
                 'deadline' => $topic->goal_deadline?->toDateString(),

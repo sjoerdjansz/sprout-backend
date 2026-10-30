@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Actions\CreateStarterCategories;
 use App\Enums\Interest;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -24,5 +25,7 @@ class NewLearnerSeeder extends Seeder
             'wants_daily_reminder' => false,
             'timezone' => 'Europe/Amsterdam',
         ]);
+
+        (new CreateStarterCategories)->handle($sam);
     }
 }

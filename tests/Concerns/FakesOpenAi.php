@@ -49,6 +49,7 @@ trait FakesOpenAi
             'reply' => $reply,
             'draft' => $draft ?? [
                 'title' => 'Biomechanics',
+                'category' => null,
                 'goal' => ['description' => null, 'deadline' => null, 'recall_percentage' => null],
                 'subtopics' => [],
             ],

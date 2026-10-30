@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests\Conversations;
 
+use App\Http\Requests\CategoryMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class SaveConversationRequest extends FormRequest
 {
@@ -16,7 +18,9 @@ class SaveConversationRequest extends FormRequest
     }
 
     /**
-     * The reviewed draft. A topic can't be saved without a complete SMART goal and one subtopic.
+     * The reviewed draft. A topic can't be saved without a complete SMART goal and one subtopic. The
+     * category is optional here because a continued topic keeps its own; the action requires one
+     * for a new topic.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -24,6 +28,8 @@ class SaveConversationRequest extends FormRequest
     {
         return [
             'title' => ['required', 'string', 'max:255'],
+            'category_id' => ['nullable', 'integer', 'prohibits:category_name', Rule::exists('categories', 'id')->where('user_id', $this->user()->id)],
+            'category_name' => ['nullable', 'string', 'max:60'],
             'goal' => ['required', 'array:description,deadline,recall_percentage'],
             'goal.description' => ['required', 'string', 'max:1000'],
             'goal.deadline' => ['required', 'date_format:Y-m-d', 'after:today'],
@@ -43,6 +49,7 @@ class SaveConversationRequest extends FormRequest
         return [
             'title.required' => 'Give your topic a name.',
             'title.max' => 'Keep the topic name under 255 characters.',
+            ...CategoryMessages::MESSAGES,
             'goal.required' => 'Set a goal for this topic first.',
             'goal.array' => 'Set a goal for this topic first.',
             'goal.description.required' => 'Describe what you want to know or be able to do.',

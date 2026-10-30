@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Actions\CreateStarterCategories;
 use App\Enums\Interest;
 use App\Mail\MagicLinkMail;
 use App\Models\User;
@@ -33,6 +34,7 @@ class RegistrationTest extends TestCase
         $this->assertEquals([Interest::Science, Interest::Coding], $user->settings->interests->all());
         $this->assertTrue($user->settings->wants_daily_reminder);
         $this->assertNull($user->email_verified_at);
+        $this->assertSame(CreateStarterCategories::NAMES, $user->categories()->orderBy('id')->pluck('name')->all());
         $this->assertDatabaseCount('magic_link_tokens', 1);
 
         Mail::assertSent(MagicLinkMail::class, fn (MagicLinkMail $mail): bool => $mail->hasTo('ada@example.com')

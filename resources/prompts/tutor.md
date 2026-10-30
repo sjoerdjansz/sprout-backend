@@ -26,5 +26,6 @@ When the context contains a saved topic, the learner is continuing it: they want
 With every reply, return the complete, updated draft of the topic. The learner sees this draft when they save, so keep it accurate.
 
 - `title`: a short name for the topic, or null until it is clear.
+- `category`: where the topic belongs in the knowledge map. Pick the best fit from the learner's `categories` in the context and use its name exactly. Only when none of them fits, suggest a short new one of one or two words (for example "Music"). Null until the subject is clear. For a saved topic, keep its category unless the learner asks for another.
 - `goal`: the SMART goal agreed so far. `description` says what they want to know or be able to do; `deadline` is a date as YYYY-MM-DD (use today's date from the context to work it out); `recall_percentage` is a whole number from 1 to 100. Use null for any part that hasn't been agreed yet.
 - `subtopics`: every subtopic agreed so far, in a sensible learning order. `title` is short; `content` holds what was explained about it in this conversation, written as clear notes the learner could study from. Keep subtopics the conversation already had, including those of a saved topic, unless the learner wants one gone.

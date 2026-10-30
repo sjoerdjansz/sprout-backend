@@ -100,10 +100,12 @@ class TutorConversationTest extends TestCase
             ->assertJsonPath('title', 'Knee injuries')
             ->assertJsonPath('is_saved', false);
 
-        Http::assertSent(function (Request $request): bool {
+        Http::assertSent(function (Request $request) use ($topic): bool {
             $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
 
-            return $context['saved_topic']['goal']['recall_percentage'] === 80
+            return $context['learner']['categories'] === [$topic->category->name]
+                && $context['draft']['category'] === $topic->category->name
+                && $context['saved_topic']['goal']['recall_percentage'] === 80
                 && $context['saved_topic']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'mastery_percentage' => 40]]
                 && $context['draft']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']];
         });
@@ -146,6 +148,7 @@ class TutorConversationTest extends TestCase
         Sanctum::actingAs($learner);
         $updatedDraft = [
             'title' => 'Biomechanics of running',
+            'category' => 'Sport',
             'goal' => ['description' => 'Explain running gait', 'deadline' => '2026-12-01', 'recall_percentage' => 80],
             'subtopics' => [['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']],
         ];

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Answer;
+use App\Models\Category;
 use App\Models\Flashcard;
 use App\Models\FlashcardReview;
 use App\Models\Message;
@@ -51,7 +52,7 @@ class LearningDataDeletionTest extends TestCase
 
         $user->delete();
 
-        foreach ([Topic::class, Flashcard::class, Answer::class, StudySession::class, SubtopicProgress::class] as $model) {
+        foreach ([Category::class, Topic::class, Flashcard::class, Answer::class, StudySession::class, SubtopicProgress::class] as $model) {
             $this->assertSame(0, $model::where('user_id', $user->id)->count(), "$model rows were left behind");
             $this->assertSame(1, $model::where('user_id', $otherUser->id)->count());
         }

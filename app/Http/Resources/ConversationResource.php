@@ -28,7 +28,8 @@ class ConversationResource extends JsonResource
                 'title' => $this->topic->title,
             ],
             'is_saved' => $this->isSaved(),
-            'draft' => $this->draft,
+            // Drafts from before categories existed have no category yet.
+            'draft' => $this->draft === null ? null : [...$this->draft, 'category' => $this->draft['category'] ?? null],
             'started_at' => $this->started_at,
             'last_activity_at' => $this->updated_at,
             'messages' => MessageResource::collection($this->whenLoaded('messages', fn () => $this->messages->sortBy('id')->values())),

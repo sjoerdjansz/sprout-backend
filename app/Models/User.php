@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -43,11 +44,27 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<Category, $this>
+     */
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    /**
      * @return HasMany<Topic, $this>
      */
     public function topics(): HasMany
     {
         return $this->hasMany(Topic::class);
+    }
+
+    /**
+     * @return HasManyThrough<Subtopic, Topic, $this>
+     */
+    public function subtopics(): HasManyThrough
+    {
+        return $this->hasManyThrough(Subtopic::class, Topic::class);
     }
 
     /**
@@ -110,5 +127,13 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The learner's timezone: "today" and "due today" follow it.
+     */
+    public function timezone(): string
+    {
+        return $this->settings?->timezone ?? 'UTC';
     }
 }

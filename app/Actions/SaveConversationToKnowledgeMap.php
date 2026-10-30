@@ -2,7 +2,6 @@
 
 namespace App\Actions;
 
-use App\Enums\ContentOrigin;
 use App\Enums\MessageRole;
 use App\Exceptions\AiRequestFailed;
 use App\Models\StudySession;
@@ -19,13 +18,21 @@ use Illuminate\Validation\ValidationException;
  */
 class SaveConversationToKnowledgeMap
 {
-    public function __construct(private GeneratePracticeMaterial $generatePracticeMaterial) {}
+    public const CATEGORY_REQUIRED_MESSAGE = 'Pick a category for this topic.';
+
+    public function __construct(
+        private GeneratePracticeMaterial $generatePracticeMaterial,
+        private StorePracticeMaterial $storePracticeMaterial,
+        private ResolveCategory $resolveCategory,
+    ) {}
 
     /**
      * @param  array<int, array{title: string, content: string}>  $subtopics  as reviewed by the learner
+     * @param  int|null  $categoryId  one of the learner's categories; with $categoryName, required for a new topic
+     * @param  string|null  $categoryName  a new category, or an existing one by name
      * @return array{topic: Topic, added_subtopics: int, added_flashcards: int, added_questions: int}
      *
-     * @throws ValidationException when the conversation is already saved.
+     * @throws ValidationException when the conversation is already saved, or a new topic has no category.
      * @throws AiRequestFailed when generating fails; nothing is saved then.
      */
     public function handle(
@@ -35,12 +42,20 @@ class SaveConversationToKnowledgeMap
         string $goalDeadline,
         int $goalRecallPercentage,
         array $subtopics,
+        ?int $categoryId,
+        ?string $categoryName,
     ): array {
         if ($conversation->isSaved()) {
             throw ValidationException::withMessages(['conversation' => SendMessageToTutor::ALREADY_SAVED_MESSAGE]);
         }
 
-        $topic = $conversation->topic?->load('subtopics.flashcards', 'subtopics.questions');
+        $topic = $conversation->topic?->load('category', 'subtopics.flashcards', 'subtopics.questions');
+        $hasCategory = $categoryId !== null || $categoryName !== null;
+
+        // A continued topic keeps its category unless the learner picked another one.
+        if ($topic === null && ! $hasCategory) {
+            throw ValidationException::withMessages(['category_id' => self::CATEGORY_REQUIRED_MESSAGE]);
+        }
         $existingSubtopics = $topic?->subtopics->keyBy(fn (Subtopic $subtopic): string => Str::lower($subtopic->title)) ?? collect();
 
         // Only new subtopics and those whose notes changed need material; the rest is already covered.
@@ -69,18 +84,22 @@ class SaveConversationToKnowledgeMap
             subtopics: $subtopicsNeedingMaterial,
         );
 
-        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $subtopicsNeedingMaterial, $material): array {
-            $goalAttributes = [
+        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $categoryId, $categoryName, $hasCategory, $subtopicsNeedingMaterial, $material): array {
+            $topicAttributes = [
                 'title' => $title,
                 'goal' => $goal,
                 'goal_deadline' => $goalDeadline,
                 'goal_recall_percentage' => $goalRecallPercentage,
             ];
 
+            if ($hasCategory) {
+                $topicAttributes['category_id'] = $this->resolveCategory->handle($conversation->user, $categoryId, $categoryName)->id;
+            }
+
             if ($topic === null) {
-                $topic = $conversation->user->topics()->create($goalAttributes);
+                $topic = $conversation->user->topics()->create($topicAttributes);
             } else {
-                $topic->update($goalAttributes);
+                $topic->update($topicAttributes);
             }
 
             $savedSubtopics = $this->saveSubtopics($topic, $existingSubtopics, $subtopics);
@@ -89,37 +108,14 @@ class SaveConversationToKnowledgeMap
             $addedQuestions = 0;
 
             foreach ($subtopicsNeedingMaterial as $index => $subtopicNeedingMaterial) {
-                $subtopic = $savedSubtopics[Str::lower($subtopicNeedingMaterial['title'])];
-
-                foreach ($material[$index]['flashcards'] as $flashcard) {
-                    $subtopic->flashcards()->create([
-                        'user_id' => $conversation->user_id,
-                        'topic_id' => $topic->id,
-                        'front' => $flashcard['front'],
-                        'back' => $flashcard['back'],
-                        'origin' => ContentOrigin::Ai,
-                        'source_message_id' => $sourceMessageId,
-                        'due_at' => now(),
-                    ]);
-                    $addedFlashcards++;
-                }
-
-                foreach ($material[$index]['questions'] as $generatedQuestion) {
-                    $question = $subtopic->questions()->create([
-                        'topic_id' => $topic->id,
-                        'type' => $generatedQuestion['type'],
-                        'prompt' => $generatedQuestion['prompt'],
-                        'model_answer' => $generatedQuestion['model_answer'],
-                        'origin' => ContentOrigin::Ai,
-                        'source_message_id' => $sourceMessageId,
-                    ]);
-
-                    foreach ($generatedQuestion['options'] as $position => $option) {
-                        $question->options()->create([...$option, 'position' => $position + 1]);
-                    }
-
-                    $addedQuestions++;
-                }
+                $added = $this->storePracticeMaterial->handle(
+                    subtopic: $savedSubtopics[Str::lower($subtopicNeedingMaterial['title'])],
+                    learnerId: $conversation->user_id,
+                    material: $material[$index],
+                    sourceMessageId: $sourceMessageId,
+                );
+                $addedFlashcards += $added['flashcards'];
+                $addedQuestions += $added['questions'];
             }
 
             $conversation->update([
@@ -127,6 +123,7 @@ class SaveConversationToKnowledgeMap
                 'ended_at' => now(),
                 'draft' => [
                     'title' => $title,
+                    'category' => $topic->load('category')->category->name,
                     'goal' => ['description' => $goal, 'deadline' => $goalDeadline, 'recall_percentage' => $goalRecallPercentage],
                     'subtopics' => $subtopics,
                 ],

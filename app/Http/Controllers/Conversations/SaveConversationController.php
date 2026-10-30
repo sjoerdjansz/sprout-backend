@@ -22,6 +22,8 @@ class SaveConversationController extends Controller
             goalDeadline: $request->validated('goal.deadline'),
             goalRecallPercentage: $request->integer('goal.recall_percentage'),
             subtopics: $request->subtopics(),
+            categoryId: $request->validated('category_id'),
+            categoryName: $request->validated('category_name'),
         );
 
         return (new SavedTopicResource($result))->response()->setStatusCode(201);

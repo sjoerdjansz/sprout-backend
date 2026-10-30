@@ -64,12 +64,13 @@ class AskTutor
     /**
      * The draft of a conversation that hasn't settled anything yet.
      *
-     * @return array{title: null, goal: array{description: null, deadline: null, recall_percentage: null}, subtopics: array{}}
+     * @return array{title: null, category: null, goal: array{description: null, deadline: null, recall_percentage: null}, subtopics: array{}}
      */
     public static function emptyDraft(): array
     {
         return [
             'title' => null,
+            'category' => null,
             'goal' => ['description' => null, 'deadline' => null, 'recall_percentage' => null],
             'subtopics' => [],
         ];
@@ -86,6 +87,7 @@ class AskTutor
             'learner' => [
                 'name' => $learner->name,
                 'interests' => $learner->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
+                'categories' => $learner->categories()->orderBy('id')->pluck('name'),
             ],
             'draft' => $draft,
             'saved_topic' => $savedTopic === null ? null : $this->savedTopicContext($learner, $savedTopic),
@@ -132,9 +134,10 @@ class AskTutor
                 'draft' => [
                     'type' => 'object',
                     'additionalProperties' => false,
-                    'required' => ['title', 'goal', 'subtopics'],
+                    'required' => ['title', 'category', 'goal', 'subtopics'],
                     'properties' => [
                         'title' => $nullableString,
+                        'category' => $nullableString,
                         'goal' => [
                             'type' => 'object',
                             'additionalProperties' => false,
