@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\RequestMagicLinkController;
 use App\Http\Controllers\Auth\VerifyMagicLinkController;
+use App\Http\Controllers\Conversations\DeleteConversationController;
 use App\Http\Controllers\Conversations\ListConversationsController;
 use App\Http\Controllers\Conversations\SaveConversationController;
 use App\Http\Controllers\Conversations\SendMessageController;
@@ -45,6 +46,7 @@ Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.
     Route::get('/', ListConversationsController::class)->name('index');
     Route::post('/', StartConversationController::class)->middleware('throttle:tutor-messages')->name('store');
     Route::get('/{conversation}', ShowConversationController::class)->whereNumber('conversation')->name('show');
+    Route::delete('/{conversation}', DeleteConversationController::class)->whereNumber('conversation')->name('destroy');
     Route::post('/{conversation}/messages', SendMessageController::class)
         ->whereNumber('conversation')
         ->middleware('throttle:tutor-messages')
