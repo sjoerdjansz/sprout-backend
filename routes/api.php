@@ -10,6 +10,8 @@ use App\Http\Controllers\Conversations\SendMessageController;
 use App\Http\Controllers\Conversations\ShowConversationController;
 use App\Http\Controllers\Conversations\StartConversationController;
 use App\Http\Controllers\CurrentUserController;
+use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
+use App\Http\Controllers\KnowledgeMap\ListTopicsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/status', function () {
@@ -47,4 +49,12 @@ Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.
         ->whereNumber('conversation')
         ->middleware('throttle:save-conversations')
         ->name('save');
+});
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/categories', ListCategoriesController::class)->name('categories.index');
+
+    Route::prefix('topics')->name('topics.')->group(function () {
+        Route::get('/', ListTopicsController::class)->name('index');
+    });
 });
