@@ -73,5 +73,13 @@ class AppServiceProvider extends ServiceProvider
                 429,
                 $headers,
             )));
+
+        RateLimiter::for('generate-material', fn (Request $request): Limit => Limit::perMinute(5)
+            ->by((string) $request->user()?->id)
+            ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
+                ['message' => "You've saved a few subtopics in a row. Wait a minute and try again."],
+                429,
+                $headers,
+            )));
     }
 }
