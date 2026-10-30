@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Actions\CreateStarterCategories;
 use App\Enums\AiProvider;
 use App\Enums\ContentOrigin;
 use App\Enums\Interest;
@@ -46,6 +47,8 @@ class ActiveLearnerSeeder extends Seeder
             'daily_goal_cards' => 20,
             'reminder_time' => '19:00',
         ]);
+
+        (new CreateStarterCategories)->handle($ada);
 
         $this->connectDevelopmentApiKey($ada);
         $this->seedPhotosynthesis($ada);
@@ -114,6 +117,7 @@ class ActiveLearnerSeeder extends Seeder
     private function seedPhotosynthesis(User $user): void
     {
         $topic = $user->topics()->create([
+            'category_id' => $user->categories()->where('name', 'Science')->value('id'),
             'title' => 'Photosynthesis',
             'description' => 'How plants turn light, water and carbon dioxide into sugar and oxygen.',
             'goal' => 'Explain both stages of photosynthesis, and what limits their rate, without notes.',
@@ -203,6 +207,7 @@ class ActiveLearnerSeeder extends Seeder
     private function seedSpanish(User $user): void
     {
         $topic = $user->topics()->create([
+            'category_id' => $user->categories()->where('name', 'Languages')->value('id'),
             'title' => 'Spanish basics',
             'description' => 'Getting by on a first trip to Spain: greetings, numbers and the first verbs.',
             'goal' => 'Greet people, order food and count to one hundred in Spanish on my trip.',
@@ -231,10 +236,11 @@ class ActiveLearnerSeeder extends Seeder
             [[13, ReviewRating::Good], [12, ReviewRating::Good], [9, ReviewRating::Good], [3, ReviewRating::Good]]);
         $this->createFlashcard($user, $topic, $greetings, 'Nice to meet you', 'Mucho gusto', null,
             [[5, ReviewRating::Easy], [4, ReviewRating::Easy]], origin: ContentOrigin::User);
+        // Numbers went well at first and haven't been reviewed for almost two weeks: they're slipping.
         $this->createFlashcard($user, $topic, $numbers, '15', 'quince', null,
-            [[6, ReviewRating::Again], [5, ReviewRating::Good], [2, ReviewRating::Hard]]);
+            [[13, ReviewRating::Good], [12, ReviewRating::Again]]);
         $this->createFlashcard($user, $topic, $numbers, '12', 'doce', null,
-            [[5, ReviewRating::Good], [4, ReviewRating::Good], [1, ReviewRating::Good]]);
+            [[14, ReviewRating::Good], [13, ReviewRating::Good]]);
         $this->createFlashcard($user, $topic, $serEstar, 'Madrid ___ en España (ser or estar?)', 'está: location uses estar', $messages[4],
             [[2, ReviewRating::Again]]);
         $this->createFlashcard($user, $topic, $arVerbs, 'hablar, yo form', 'hablo', null,
@@ -256,7 +262,7 @@ class ActiveLearnerSeeder extends Seeder
         $this->createAnswer($user, $open, $session, now()->subDays(2)->setTime(20, 20), response: 'Buenas noches', score: 30, isCorrect: false,
             feedback: 'Not quite: "buenas noches" is for leaving or late at night. Arriving in the evening, say "buenas tardes".');
 
-        $this->createProgress($user, [$greetings, 78], [$numbers, 55], [$serEstar, 20], [$arVerbs, 0]);
+        $this->createProgress($user, [$greetings, 78], [$numbers, 55, 72], [$serEstar, 20], [$arVerbs, 0]);
     }
 
     /**
@@ -488,14 +494,17 @@ class ActiveLearnerSeeder extends Seeder
     }
 
     /**
-     * @param  array{0: Subtopic, 1: int}  ...$masteryPerSubtopic
+     * @param  array{0: Subtopic, 1: int, 2?: int}  ...$masteryPerSubtopic  [subtopic, mastery, highest mastery reached (defaults to mastery)]
      */
     private function createProgress(User $user, array ...$masteryPerSubtopic): void
     {
-        foreach ($masteryPerSubtopic as [$subtopic, $mastery]) {
+        foreach ($masteryPerSubtopic as $progress) {
+            [$subtopic, $mastery] = $progress;
+
             $user->subtopicProgress()->create([
                 'subtopic_id' => $subtopic->id,
                 'mastery' => $mastery,
+                'peak_mastery' => $progress[2] ?? $mastery,
                 'last_studied_at' => $mastery > 0 ? now()->subDay() : null,
             ]);
         }

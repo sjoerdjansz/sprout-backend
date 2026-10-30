@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Derived: a learner's mastery of a subtopic, recalculated from reviews and answers.
  */
 #[Table('subtopic_progress')]
-#[Fillable(['user_id', 'subtopic_id', 'mastery', 'last_studied_at'])]
+#[Fillable(['user_id', 'subtopic_id', 'mastery', 'peak_mastery', 'last_studied_at'])]
 class SubtopicProgress extends Model
 {
     /** @use HasFactory<SubtopicProgressFactory> */
@@ -44,6 +44,7 @@ class SubtopicProgress extends Model
     {
         return [
             'mastery' => 'integer',
+            'peak_mastery' => 'integer',
             'last_studied_at' => 'datetime',
         ];
     }

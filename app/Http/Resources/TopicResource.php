@@ -21,6 +21,7 @@ class TopicResource extends JsonResource
         return [
             'id' => $this->id,
             'title' => $this->title,
+            'category' => new CategoryResource($this->category),
             'goal' => [
                 'description' => $this->goal,
                 'deadline' => $this->goal_deadline?->toDateString(),

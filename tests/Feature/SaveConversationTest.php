@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\ContentOrigin;
 use App\Enums\MessageRole;
 use App\Enums\QuestionType;
+use App\Models\Category;
 use App\Models\Flashcard;
 use App\Models\Message;
 use App\Models\Question;
@@ -222,6 +223,78 @@ class SaveConversationTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_a_new_topic_goes_in_the_category_the_learner_picked_or_named(): void
+    {
+        $learner = $this->learnerWithKey();
+        $science = Category::factory()->for($learner)->create(['name' => 'Science']);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Gait cycle', flashcards: 1)]])]);
+        $subtopics = [['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']];
+
+        $byId = $this->openConversation($learner);
+        $this->postJson("/api/v1/conversations/{$byId->id}/save", [...$this->reviewedDraft(subtopics: $subtopics), 'category_name' => null, 'category_id' => $science->id])
+            ->assertCreated()
+            ->assertJsonPath('topic.category', ['id' => $science->id, 'name' => 'Science']);
+
+        $byExistingName = $this->openConversation($learner);
+        $this->postJson("/api/v1/conversations/{$byExistingName->id}/save", [...$this->reviewedDraft(subtopics: $subtopics), 'category_name' => 'sCIENCE'])
+            ->assertCreated()
+            ->assertJsonPath('topic.category.id', $science->id);
+
+        $byNewName = $this->openConversation($learner);
+        $this->postJson("/api/v1/conversations/{$byNewName->id}/save", $this->reviewedDraft(subtopics: $subtopics))
+            ->assertCreated()
+            ->assertJsonPath('topic.category.name', 'Sport');
+
+        $this->assertSame(['Science', 'Sport'], $learner->categories()->orderBy('id')->pluck('name')->all());
+        $this->assertSame('Sport', $byNewName->fresh()->draft['category']);
+    }
+
+    public function test_a_new_topic_needs_a_category_of_your_own(): void
+    {
+        $learner = $this->learnerWithKey();
+        $conversation = $this->openConversation($learner);
+        $someoneElsesCategory = Category::factory()->create();
+        Sanctum::actingAs($learner);
+        Http::fake();
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", [...$this->reviewedDraft(), 'category_name' => null])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category_id' => 'Pick a category for this topic.']);
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", [...$this->reviewedDraft(), 'category_name' => null, 'category_id' => $someoneElsesCategory->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category_id' => "We couldn't find that category. Pick one from the list."]);
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", [...$this->reviewedDraft(), 'category_id' => $someoneElsesCategory->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['category_id' => 'Pick a category or name a new one, not both.']);
+
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('topics', 0);
+    }
+
+    public function test_a_continued_topic_keeps_its_category_unless_another_is_picked(): void
+    {
+        $learner = $this->learnerWithKey();
+        $topic = Topic::factory()->for($learner)->create();
+        $originalCategory = $topic->category;
+        Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);
+        Sanctum::actingAs($learner);
+        Http::fake();
+        $unchangedSubtopics = [['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']];
+
+        $kept = $this->openConversation($learner, $topic);
+        $this->postJson("/api/v1/conversations/{$kept->id}/save", [...$this->reviewedDraft(subtopics: $unchangedSubtopics), 'category_name' => null])
+            ->assertCreated()
+            ->assertJsonPath('topic.category.id', $originalCategory->id);
+
+        $changed = $this->openConversation($learner, $topic);
+        $this->postJson("/api/v1/conversations/{$changed->id}/save", $this->reviewedDraft(subtopics: $unchangedSubtopics))
+            ->assertCreated()
+            ->assertJsonPath('topic.category.name', 'Sport');
+    }
+
     private function openConversation(User $learner, ?Topic $topic = null): StudySession
     {
         return StudySession::factory()->for($learner)->create(['topic_id' => $topic?->id, 'ended_at' => null]);
@@ -236,6 +309,7 @@ class SaveConversationTest extends TestCase
     {
         return [
             'title' => 'Biomechanics of running',
+            'category_name' => 'Sport',
             'goal' => $goal ?? [
                 'description' => 'Explain the running gait to my athletes',
                 'deadline' => now()->addMonth()->toDateString(),

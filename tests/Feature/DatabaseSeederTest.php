@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Actions\CreateStarterCategories;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,11 +27,14 @@ class DatabaseSeederTest extends TestCase
         $this->assertTrue($ada->dailyActivities()->whereDate('activity_date', today())->exists(), 'Ada\'s streak should include today');
         $this->assertSame('abcd', $ada->aiCredentials()->sole()->key_last_four);
         Storage::disk('local')->assertExists('materials/seed/photosynthesis-notes.txt');
+        $this->assertSame(CreateStarterCategories::NAMES, $ada->categories()->orderBy('id')->pluck('name')->all());
+        $this->assertSame(['Science', 'Languages'], $ada->topics()->orderBy('id')->with('category')->get()->pluck('category.name')->all());
 
         $sam = User::where('email', 'sam@sprout.test')->sole();
         $this->assertNotNull($sam->settings);
         $this->assertSame(0, $sam->topics()->count());
         $this->assertSame(0, $sam->aiCredentials()->count());
+        $this->assertSame(CreateStarterCategories::NAMES, $sam->categories()->orderBy('id')->pluck('name')->all());
     }
 
     public function test_active_learner_gets_no_ai_key_when_none_is_configured(): void

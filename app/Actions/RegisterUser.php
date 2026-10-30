@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\DB;
 
 class RegisterUser
 {
-    public function __construct(private SendMagicLink $sendMagicLink) {}
+    public function __construct(
+        private SendMagicLink $sendMagicLink,
+        private CreateStarterCategories $createStarterCategories,
+    ) {}
 
     /**
      * @param  array<int, Interest>  $interests
@@ -32,6 +35,8 @@ class RegisterUser
                 'interests' => $interests,
                 'wants_daily_reminder' => $wantsDailyReminder,
             ]);
+
+            $this->createStarterCategories->handle($user);
 
             return $user;
         });

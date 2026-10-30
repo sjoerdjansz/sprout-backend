@@ -20,6 +20,11 @@
 //   topic_id and ended_at, and a saved conversation is read-only. The tutor keeps a draft of the topic on it.
 // - One SMART goal per topic, as columns on topics. Subtopics keep the notes their cards are made from.
 // - Learners pick an AI level (low/medium/high); the models per level are configuration (config/ai.php).
+//
+// Decisions (2026-10-30, specs/knowledge-map.md):
+// - Every topic is in exactly one category. Categories belong to a learner: six starters at sign up plus their own.
+// - Facet progress (flashcards, explain, quiz), "holding" and "slipping" are worked out from the raw events when
+//   the knowledge map is read, not stored. subtopic_progress keeps the highest mastery reached for "slipping".
 
 Project sprout {
   database_type: 'MySQL'
@@ -119,11 +124,27 @@ Enum ai_provider {
 // What is being learned
 // ---------------------------------------------------------------------------
 
+Table categories {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  name varchar(60) [not null, note: 'Unique per user regardless of case; the app checks that, as SQLite and MariaDB collations differ']
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, name) [unique]
+  }
+
+  Note: 'BUILT. Groups a learner\'s topics. Every learner starts with Science, Technology, Maths, Languages, History and Arts & culture, and can add their own. There is no renaming or deleting yet.'
+}
+
 Table topics {
   id bigint [pk, increment]
   user_id bigint [not null, ref: > users.id]
+  category_id bigint [not null, ref: > categories.id, note: 'Cascades like every key, but categories can\'t be deleted on their own yet; when they can, move their topics first']
   title varchar(255) [not null]
   description text [null]
+  notes text [null, note: 'The learner\'s own notes or a source for the topic; nothing is generated from them']
   goal text [null, note: 'The SMART goal: what the learner wants to know or be able to do. Required when saving from the chat']
   goal_deadline date [null]
   goal_recall_percentage tinyint [null, note: '1-100: the recall the learner wants to reach by the deadline']
@@ -138,7 +159,8 @@ Table subtopics {
   id bigint [pk, increment]
   topic_id bigint [not null, ref: > topics.id]
   title varchar(255) [not null]
-  content text [null, note: 'What the tutor explained: the notes its cards and questions are made from']
+  description text [null, note: 'What the subtopic should cover, in a line']
+  content text [null, note: 'The notes its cards and questions are made from: what the tutor explained, or the learner\'s notes ("notes" in the API)']
   position smallint [not null, note: 'Order within the topic']
   created_at timestamp
   updated_at timestamp
@@ -338,6 +360,7 @@ Table subtopic_progress {
   user_id bigint [not null, ref: > users.id]
   subtopic_id bigint [not null, ref: > subtopics.id]
   mastery smallint [not null, default: 0, note: '0-100']
+  peak_mastery smallint [not null, default: 0, note: '0-100; the highest mastery reached. A subtopic only slips once it had reached 65']
   last_studied_at timestamp [null]
   created_at timestamp
   updated_at timestamp

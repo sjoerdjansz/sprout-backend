@@ -23,6 +23,7 @@ class SubtopicProgressFactory extends Factory
             'user_id' => User::factory(),
             'subtopic_id' => Subtopic::factory(),
             'mastery' => fake()->numberBetween(0, 100),
+            'peak_mastery' => fn (array $attributes): int => $attributes['mastery'],
             'last_studied_at' => now(),
         ];
     }
