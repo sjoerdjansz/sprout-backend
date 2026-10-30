@@ -1,0 +1,347 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Enums\AiLevel;
+use App\Enums\MessageRole;
+use App\Enums\SessionKind;
+use App\Models\Message;
+use App\Models\StudySession;
+use App\Models\Subtopic;
+use App\Models\SubtopicProgress;
+use App\Models\Topic;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\FakesOpenAi;
+use Tests\TestCase;
+
+class TutorConversationTest extends TestCase
+{
+    use FakesOpenAi;
+    use RefreshDatabase;
+
+    public function test_guest_cannot_use_conversations(): void
+    {
+        $this->getJson('/api/v1/conversations')->assertUnauthorized();
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertUnauthorized();
+    }
+
+    public function test_first_message_starts_a_conversation_with_the_tutors_reply(): void
+    {
+        $learner = $this->learnerWithKey();
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'I want to learn more about biomechanics']);
+
+        $response->assertCreated()
+            ->assertJsonPath('title', 'Biomechanics')
+            ->assertJsonPath('topic', null)
+            ->assertJsonPath('is_saved', false)
+            ->assertJsonPath('draft.title', 'Biomechanics')
+            ->assertJsonPath('messages.0.role', 'user')
+            ->assertJsonPath('messages.0.content', 'I want to learn more about biomechanics')
+            ->assertJsonPath('messages.1.role', 'tutor')
+            ->assertJsonPath('messages.1.content', 'What do you already know about **biomechanics**?');
+
+        $conversation = StudySession::sole();
+        $this->assertSame(SessionKind::Learn, $conversation->kind);
+        $this->assertTrue($conversation->user->is($learner));
+
+        $tutorMessage = $conversation->messages()->where('role', MessageRole::Tutor)->sole();
+        $this->assertSame('gpt-5.6-terra', $tutorMessage->model);
+        $this->assertSame(1200, $tutorMessage->input_tokens);
+        $this->assertSame(150, $tutorMessage->output_tokens);
+    }
+
+    public function test_the_tutor_is_asked_with_the_learners_key_level_and_profile(): void
+    {
+        $learner = $this->learnerWithKey();
+        $learner->settings->update(['ai_level' => AiLevel::Low]);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $this->postJson('/api/v1/conversations', ['message' => 'Teach me biomechanics'])->assertCreated();
+
+        Http::assertSent(function (Request $request): bool {
+            $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
+
+            return $request->hasHeader('Authorization', 'Bearer '.self::LEARNER_API_KEY)
+                && $request['model'] === config('ai.levels.low.chat_model')
+                && $request['response_format']['json_schema']['strict'] === true
+                && $context['learner']['name'] === 'Ada'
+                && $context['saved_topic'] === null
+                && $request['messages'][2] === ['role' => 'user', 'content' => 'Teach me biomechanics'];
+        });
+    }
+
+    public function test_continuing_a_topic_starts_from_its_saved_goal_and_subtopics(): void
+    {
+        $learner = $this->learnerWithKey();
+        $topic = Topic::factory()->for($learner)->create([
+            'title' => 'Knee injuries',
+            'goal' => 'Explain the common knee injuries to a client',
+            'goal_deadline' => now()->addMonth(),
+            'goal_recall_percentage' => 80,
+        ]);
+        $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']);
+        SubtopicProgress::factory()->for($learner)->for($subtopic)->create(['mastery' => 40]);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'Let us go deeper', 'topic_id' => $topic->id]);
+
+        $response->assertCreated()
+            ->assertJsonPath('topic.id', $topic->id)
+            ->assertJsonPath('title', 'Knee injuries')
+            ->assertJsonPath('is_saved', false);
+
+        Http::assertSent(function (Request $request): bool {
+            $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
+
+            return $context['saved_topic']['goal']['recall_percentage'] === 80
+                && $context['saved_topic']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'mastery_percentage' => 40]]
+                && $context['draft']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']];
+        });
+    }
+
+    public function test_a_conversation_cannot_continue_someone_elses_topic(): void
+    {
+        $learner = $this->learnerWithKey();
+        $someoneElsesTopic = Topic::factory()->create();
+        Sanctum::actingAs($learner);
+        Http::fake();
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi', 'topic_id' => $someoneElsesTopic->id]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['topic_id' => "We couldn't find that topic. Pick one from your knowledge map."]);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_message_must_be_filled_in_and_not_too_long(): void
+    {
+        Sanctum::actingAs($this->learnerWithKey());
+        Http::fake();
+
+        $this->postJson('/api/v1/conversations', ['message' => '   '])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['message' => 'Type a message first.']);
+
+        $this->postJson('/api/v1/conversations', ['message' => str_repeat('a', 2001)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['message' => 'Keep your message under 2,000 characters. Split it into a few messages.']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_a_message_continues_the_conversation_and_updates_the_draft(): void
+    {
+        $learner = $this->learnerWithKey();
+        $conversation = $this->openConversation($learner);
+        Sanctum::actingAs($learner);
+        $updatedDraft = [
+            'title' => 'Biomechanics of running',
+            'goal' => ['description' => 'Explain running gait', 'deadline' => '2026-12-01', 'recall_percentage' => 80],
+            'subtopics' => [['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']],
+        ];
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply('Nice. What happens in the stance phase?', $updatedDraft))]);
+
+        $response = $this->postJson("/api/v1/conversations/{$conversation->id}/messages", ['message' => 'Running, for my coaching']);
+
+        $response->assertCreated()
+            ->assertJsonPath('draft', $updatedDraft)
+            ->assertJsonCount(2, 'messages')
+            ->assertJsonPath('messages.0.content', 'Running, for my coaching')
+            ->assertJsonPath('messages.1.content', 'Nice. What happens in the stance phase?');
+        $this->assertSame($updatedDraft, $conversation->fresh()->draft);
+    }
+
+    public function test_only_the_last_ten_messages_are_sent_to_the_tutor(): void
+    {
+        $learner = $this->learnerWithKey();
+        $conversation = $this->openConversation($learner);
+        Message::factory()->count(12)->for($conversation)->sequence(fn ($sequence): array => [
+            'role' => MessageRole::User,
+            'content' => 'Message '.($sequence->index + 1),
+        ])->create();
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/messages", ['message' => 'Newest'])->assertCreated();
+
+        Http::assertSent(function (Request $request): bool {
+            $messages = $request['messages'];
+            $history = array_slice($messages, 2, -1);
+
+            return count($history) === 10
+                && $history[0]['content'] === 'Message 3'
+                && $history[9]['content'] === 'Message 12'
+                && end($messages)['content'] === 'Newest';
+        });
+    }
+
+    public function test_a_saved_conversation_is_read_only(): void
+    {
+        $learner = $this->learnerWithKey();
+        $savedConversation = StudySession::factory()->for($learner)->create(['ended_at' => now()]);
+        Sanctum::actingAs($learner);
+        Http::fake();
+
+        $response = $this->postJson("/api/v1/conversations/{$savedConversation->id}/messages", ['message' => 'More please']);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['message' => 'This conversation is saved. Use "Continue learning" to add to it.']);
+        Http::assertNothingSent();
+    }
+
+    public function test_someone_elses_conversation_is_not_found(): void
+    {
+        $someoneElsesConversation = $this->openConversation(User::factory()->create());
+        Sanctum::actingAs($this->learnerWithKey());
+        Http::fake();
+
+        $this->getJson("/api/v1/conversations/{$someoneElsesConversation->id}")->assertNotFound();
+        $this->postJson("/api/v1/conversations/{$someoneElsesConversation->id}/messages", ['message' => 'Hi'])->assertNotFound();
+        Http::assertNothingSent();
+    }
+
+    public function test_a_learner_without_a_key_is_asked_to_connect_one(): void
+    {
+        $learner = User::factory()->create();
+        Sanctum::actingAs($learner);
+        Http::fake();
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_key' => 'Connect your AI key to start learning.']);
+        $this->assertDatabaseCount('study_sessions', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_locally_the_developers_key_is_used_for_learners_without_one(): void
+    {
+        $this->app['env'] = 'local';
+        config(['services.openai.key' => 'sk-developer-key']);
+        Sanctum::actingAs(User::factory()->create());
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertCreated();
+
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer sk-developer-key'));
+    }
+
+    public function test_a_rejected_key_tells_the_learner_to_check_it_and_stores_nothing(): void
+    {
+        Sanctum::actingAs($this->learnerWithKey());
+        Http::fake(['api.openai.com/*' => $this->openAiError(401, 'invalid_request_error', 'Incorrect API key provided.')]);
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_key' => "Your AI key wasn't accepted. Check it in your settings and try again."]);
+        $this->assertDatabaseCount('study_sessions', 0);
+    }
+
+    public function test_a_key_without_credit_tells_the_learner_to_top_it_up(): void
+    {
+        Sanctum::actingAs($this->learnerWithKey());
+        Http::fake(['api.openai.com/*' => $this->openAiError(429, 'insufficient_quota', 'You have no credits remaining.')]);
+
+        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['ai_key' => 'Your AI account has run out of credit. Top it up with your AI provider and try again.']);
+    }
+
+    public function test_provider_trouble_asks_to_try_again_and_stores_nothing(): void
+    {
+        $learner = $this->learnerWithKey();
+        $conversation = $this->openConversation($learner);
+        Sanctum::actingAs($learner);
+        $tryAgain = ['message' => "The tutor can't answer right now. Try again in a moment."];
+
+        foreach ([
+            fn () => $this->openAiError(500, 'server_error'),
+            fn () => $this->openAiError(429, 'requests', 'Rate limit reached.'),
+            fn () => throw new ConnectionException('Timed out'),
+            fn () => Http::response(['model' => 'gpt-5.6-terra', 'choices' => [['finish_reason' => 'length', 'message' => ['content' => '{"reply": "Cut o']]]]),
+        ] as $providerTrouble) {
+            Http::fake(['api.openai.com/*' => $providerTrouble]);
+
+            $this->postJson("/api/v1/conversations/{$conversation->id}/messages", ['message' => 'Hi'])
+                ->assertServiceUnavailable()
+                ->assertExactJson($tryAgain);
+        }
+
+        $this->assertSame(0, $conversation->messages()->count());
+    }
+
+    public function test_the_chat_history_lists_the_learners_conversations_with_the_latest_first(): void
+    {
+        $learner = $this->learnerWithKey();
+        $topic = Topic::factory()->for($learner)->create(['title' => 'Photosynthesis']);
+        $older = StudySession::factory()->for($learner)->for($topic)->create(['updated_at' => now()->subDays(2)]);
+        $newer = $this->openConversation($learner);
+        StudySession::factory()->for($learner)->create(['topic_id' => null, 'kind' => SessionKind::Review]);
+        $this->openConversation(User::factory()->create());
+        Sanctum::actingAs($learner);
+
+        $response = $this->getJson('/api/v1/conversations');
+
+        $response->assertOk()
+            ->assertJsonCount(2)
+            ->assertJsonPath('0.id', $newer->id)
+            ->assertJsonPath('0.title', 'Biomechanics')
+            ->assertJsonPath('0.is_saved', false)
+            ->assertJsonPath('1.id', $older->id)
+            ->assertJsonPath('1.title', 'Photosynthesis')
+            ->assertJsonPath('1.topic.title', 'Photosynthesis')
+            ->assertJsonPath('1.is_saved', true)
+            ->assertJsonMissingPath('0.messages');
+    }
+
+    public function test_opening_a_conversation_shows_its_messages_in_order(): void
+    {
+        $learner = $this->learnerWithKey();
+        $conversation = $this->openConversation($learner);
+        $first = Message::factory()->for($conversation)->create(['role' => MessageRole::User, 'content' => 'First']);
+        $second = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor, 'content' => 'Second']);
+        Sanctum::actingAs($learner);
+
+        $response = $this->getJson("/api/v1/conversations/{$conversation->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('messages.0.id', $first->id)
+            ->assertJsonPath('messages.1.id', $second->id)
+            ->assertJsonPath('messages.1.role', 'tutor');
+    }
+
+    public function test_sending_messages_is_rate_limited_per_learner(): void
+    {
+        Sanctum::actingAs($this->learnerWithKey());
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        for ($attempt = 1; $attempt <= 10; $attempt++) {
+            $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertCreated();
+        }
+
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])
+            ->assertTooManyRequests()
+            ->assertJsonPath('message', "You're sending messages quickly. Wait a moment and try again.");
+    }
+
+    private function openConversation(User $learner): StudySession
+    {
+        return StudySession::factory()->for($learner)->create([
+            'topic_id' => null,
+            'draft' => $this->tutorReply()['draft'],
+            'ended_at' => null,
+        ]);
+    }
+}

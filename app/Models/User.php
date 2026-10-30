@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SessionKind;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -55,6 +56,16 @@ class User extends Authenticatable
     public function studySessions(): HasMany
     {
         return $this->hasMany(StudySession::class);
+    }
+
+    /**
+     * The chats with the tutor ("conversations" in the API); review sessions belong to practice.
+     *
+     * @return HasMany<StudySession, $this>
+     */
+    public function conversations(): HasMany
+    {
+        return $this->studySessions()->where('kind', SessionKind::Learn);
     }
 
     /**

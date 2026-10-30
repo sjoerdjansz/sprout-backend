@@ -56,5 +56,14 @@ class AppServiceProvider extends ServiceProvider
                 429,
                 $headers,
             )));
+
+        // Per learner, to keep AI costs predictable (specs/tutor-chat.md, Limits).
+        RateLimiter::for('tutor-messages', fn (Request $request): Limit => Limit::perMinute(10)
+            ->by((string) $request->user()?->id)
+            ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
+                ['message' => "You're sending messages quickly. Wait a moment and try again."],
+                429,
+                $headers,
+            )));
     }
 }
