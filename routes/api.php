@@ -11,12 +11,23 @@ use App\Http\Controllers\Conversations\SendMessageController;
 use App\Http\Controllers\Conversations\ShowConversationController;
 use App\Http\Controllers\Conversations\StartConversationController;
 use App\Http\Controllers\CurrentUserController;
+use App\Http\Controllers\Flashcards\DeleteFlashcardController;
+use App\Http\Controllers\Flashcards\ListFlashcardsController;
+use App\Http\Controllers\Flashcards\PauseFlashcardController;
+use App\Http\Controllers\Flashcards\ResumeFlashcardController;
+use App\Http\Controllers\Flashcards\StoreFlashcardController;
+use App\Http\Controllers\Flashcards\UpdateFlashcardController;
+use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
+use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
 use App\Http\Controllers\KnowledgeMap\ListTopicsController;
+use App\Http\Controllers\KnowledgeMap\ShowSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Questions\DeleteQuestionController;
+use App\Http\Controllers\Questions\ListQuestionsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/status', function () {
@@ -66,9 +77,30 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{topic}', UpdateTopicController::class)->whereNumber('topic')->name('update');
     });
 
-    // Subtopics with notes get flashcards and questions generated, so they share a rate limit.
-    Route::prefix('subtopics')->name('subtopics.')->middleware('throttle:generate-material')->group(function () {
-        Route::post('/', StoreSubtopicController::class)->name('store');
-        Route::put('/{subtopic}', UpdateSubtopicController::class)->whereNumber('subtopic')->name('update');
+    Route::prefix('subtopics')->name('subtopics.')->group(function () {
+        // Subtopics with notes get flashcards and questions generated, so adding and editing share a rate limit.
+        Route::post('/', StoreSubtopicController::class)->middleware('throttle:generate-material')->name('store');
+        Route::get('/{subtopic}', ShowSubtopicController::class)->whereNumber('subtopic')->name('show');
+        Route::put('/{subtopic}', UpdateSubtopicController::class)
+            ->whereNumber('subtopic')
+            ->middleware('throttle:generate-material')
+            ->name('update');
+        Route::delete('/{subtopic}', DeleteSubtopicController::class)->whereNumber('subtopic')->name('destroy');
+        Route::post('/{subtopic}/generate', GenerateMoreMaterialController::class)
+            ->whereNumber('subtopic')
+            ->middleware('throttle:generate-more-material')
+            ->name('generate');
+        Route::get('/{subtopic}/flashcards', ListFlashcardsController::class)->whereNumber('subtopic')->name('flashcards.index');
+        Route::post('/{subtopic}/flashcards', StoreFlashcardController::class)->whereNumber('subtopic')->name('flashcards.store');
+        Route::get('/{subtopic}/questions', ListQuestionsController::class)->whereNumber('subtopic')->name('questions.index');
     });
+
+    Route::prefix('flashcards')->name('flashcards.')->group(function () {
+        Route::put('/{flashcard}', UpdateFlashcardController::class)->whereNumber('flashcard')->name('update');
+        Route::delete('/{flashcard}', DeleteFlashcardController::class)->whereNumber('flashcard')->name('destroy');
+        Route::post('/{flashcard}/pause', PauseFlashcardController::class)->whereNumber('flashcard')->name('pause');
+        Route::post('/{flashcard}/resume', ResumeFlashcardController::class)->whereNumber('flashcard')->name('resume');
+    });
+
+    Route::delete('/questions/{question}', DeleteQuestionController::class)->whereNumber('question')->name('questions.destroy');
 });

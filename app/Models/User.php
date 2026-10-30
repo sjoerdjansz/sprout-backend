@@ -68,6 +68,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasManyThrough<Question, Topic, $this>
+     */
+    public function questions(): HasManyThrough
+    {
+        return $this->hasManyThrough(Question::class, Topic::class);
+    }
+
+    /**
      * @return HasMany<StudySession, $this>
      */
     public function studySessions(): HasMany
