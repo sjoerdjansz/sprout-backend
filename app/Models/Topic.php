@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Something a learner is learning. Owned by one user.
  */
-#[Fillable(['user_id', 'title', 'description', 'archived_at'])]
+#[Fillable(['user_id', 'title', 'description', 'goal', 'goal_deadline', 'goal_recall_percentage', 'archived_at'])]
 class Topic extends Model
 {
     /** @use HasFactory<TopicFactory> */
@@ -74,6 +74,8 @@ class Topic extends Model
     protected function casts(): array
     {
         return [
+            'goal_deadline' => 'date',
+            'goal_recall_percentage' => 'integer',
             'archived_at' => 'datetime',
         ];
     }

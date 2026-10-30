@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\AiLevel;
 use App\Models\User;
 use App\Models\UserSetting;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -21,6 +22,7 @@ class UserSettingFactory extends Factory
         return [
             'user_id' => User::factory(),
             'interests' => [],
+            'ai_level' => AiLevel::Medium,
             'wants_daily_reminder' => false,
             'timezone' => 'UTC',
             'daily_goal_cards' => 20,

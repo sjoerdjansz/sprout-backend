@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class ActiveLearnerSeeder extends Seeder
 {
-    private const TUTOR_MODEL = 'gpt-4o-mini';
+    private const TUTOR_MODEL = 'gpt-5.6-terra';
 
     public function run(): void
     {
@@ -51,7 +51,43 @@ class ActiveLearnerSeeder extends Seeder
         $this->seedPhotosynthesis($ada);
         $this->seedSpanish($ada);
         $this->seedMixedReviewYesterday($ada);
+        $this->seedOpenExploration($ada);
         $this->seedDailyActivity($ada);
+    }
+
+    /**
+     * An exploration Ada hasn't saved yet: no topic, a half-filled draft, and still open to continue.
+     */
+    private function seedOpenExploration(User $user): void
+    {
+        $startedAt = now()->subHours(2);
+
+        $session = $user->studySessions()->create([
+            'topic_id' => null,
+            'kind' => SessionKind::Learn,
+            'draft' => [
+                'title' => 'Biomechanics of running',
+                'goal' => [
+                    'description' => 'Explain the phases of the running gait to the runners I coach.',
+                    'deadline' => null,
+                    'recall_percentage' => null,
+                ],
+                'subtopics' => [
+                    ['title' => 'Gait cycle', 'content' => 'A running stride has a stance phase (foot on the ground) and a swing phase (foot in the air). Unlike walking, running has a flight phase where both feet are off the ground.'],
+                ],
+            ],
+            'started_at' => $startedAt,
+            'ended_at' => null,
+        ]);
+
+        $this->createConversation($session, [
+            [MessageRole::User, null, 'I want to learn more about biomechanics.'],
+            [MessageRole::Tutor, null, "Great choice! Biomechanics is a big field, so let's narrow it down. What draws you to it: **sport**, **injuries**, or how the body moves in everyday life?"],
+            [MessageRole::User, null, 'Running. I coach a small group of runners.'],
+            [MessageRole::Tutor, null, 'Nice, that gives us a clear focus. Before I explain anything: when you watch one of your runners, which phases of a stride can you already name?'],
+            [MessageRole::User, null, 'When the foot is on the ground and when it swings forward?'],
+            [MessageRole::Tutor, null, "Exactly right: the **stance** and **swing** phases. The one missing piece is the **flight phase**, when both feet are off the ground. That's what makes running different from walking. What do you think happens to the forces on the leg when the foot lands after a flight phase?"],
+        ]);
     }
 
     /**
@@ -80,6 +116,9 @@ class ActiveLearnerSeeder extends Seeder
         $topic = $user->topics()->create([
             'title' => 'Photosynthesis',
             'description' => 'How plants turn light, water and carbon dioxide into sugar and oxygen.',
+            'goal' => 'Explain both stages of photosynthesis, and what limits their rate, without notes.',
+            'goal_deadline' => now()->addWeeks(3)->toDateString(),
+            'goal_recall_percentage' => 85,
             'created_at' => now()->subDays(21),
         ]);
 
@@ -166,6 +205,9 @@ class ActiveLearnerSeeder extends Seeder
         $topic = $user->topics()->create([
             'title' => 'Spanish basics',
             'description' => 'Getting by on a first trip to Spain: greetings, numbers and the first verbs.',
+            'goal' => 'Greet people, order food and count to one hundred in Spanish on my trip.',
+            'goal_deadline' => now()->addMonths(2)->toDateString(),
+            'goal_recall_percentage' => 80,
             'created_at' => now()->subDays(14),
         ]);
 
