@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\RequestMagicLinkController;
 use App\Http\Controllers\Auth\VerifyMagicLinkController;
 use App\Http\Controllers\Conversations\ListConversationsController;
+use App\Http\Controllers\Conversations\SaveConversationController;
 use App\Http\Controllers\Conversations\SendMessageController;
 use App\Http\Controllers\Conversations\ShowConversationController;
 use App\Http\Controllers\Conversations\StartConversationController;
@@ -42,4 +43,8 @@ Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.
         ->whereNumber('conversation')
         ->middleware('throttle:tutor-messages')
         ->name('messages.store');
+    Route::post('/{conversation}/save', SaveConversationController::class)
+        ->whereNumber('conversation')
+        ->middleware('throttle:save-conversations')
+        ->name('save');
 });
