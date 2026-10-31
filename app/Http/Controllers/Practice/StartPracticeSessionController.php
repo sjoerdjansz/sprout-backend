@@ -20,7 +20,8 @@ class StartPracticeSessionController extends Controller
 
         $result = $startPracticeSession->handle(
             learner: $learner,
-            topic: $learner->topics()->findOrFail($request->validated('topic_id')),
+            // No topic: a review of everything due today, across topics.
+            topic: $request->isDueReview() ? null : $learner->topics()->findOrFail($request->validated('topic_id')),
             subtopic: $subtopicId === null ? null : Subtopic::query()->findOrFail($subtopicId),
             modes: array_map(fn (string $mode): PracticeMode => PracticeMode::from($mode), $request->validated('modes')),
             cardIds: $request->validated('card_ids'),

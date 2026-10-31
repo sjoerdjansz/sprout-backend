@@ -18,6 +18,8 @@ class SendPracticeMessage
 {
     public const SESSION_ENDED_MESSAGE = 'This practice session has ended. Start a new one to keep practising.';
 
+    public const NO_OPEN_SESSION_MESSAGE = 'A review of everything due has no open session. Start a session on one topic to talk it through.';
+
     public function __construct(private AskPracticeTutor $askPracticeTutor) {}
 
     /**
@@ -30,6 +32,11 @@ class SendPracticeMessage
     {
         if ($session->ended_at !== null) {
             throw ValidationException::withMessages(['message' => self::SESSION_ENDED_MESSAGE]);
+        }
+
+        // The practice tutor talks about one topic; a review across topics has none.
+        if ($session->practiceScope() === StudySession::SCOPE_DUE) {
+            throw ValidationException::withMessages(['message' => self::NO_OPEN_SESSION_MESSAGE]);
         }
 
         $recentMessages = $session->messages()

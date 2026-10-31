@@ -12,6 +12,7 @@ use App\Http\Controllers\Conversations\ShowConversationController;
 use App\Http\Controllers\Conversations\StartConversationController;
 use App\Http\Controllers\CurrentUserController;
 use App\Http\Controllers\Flashcards\DeleteFlashcardController;
+use App\Http\Controllers\Flashcards\ListDueFlashcardsController;
 use App\Http\Controllers\Flashcards\ListFlashcardsController;
 use App\Http\Controllers\Flashcards\PauseFlashcardController;
 use App\Http\Controllers\Flashcards\ResumeFlashcardController;
@@ -173,6 +174,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('flashcards')->name('flashcards.')->group(function () {
+        // The queue for a review of everything due today, across topics (specs/practice-session.md).
+        Route::get('/due', ListDueFlashcardsController::class)->name('due');
         Route::put('/{flashcard}', UpdateFlashcardController::class)->whereNumber('flashcard')->name('update');
         Route::delete('/{flashcard}', DeleteFlashcardController::class)->whereNumber('flashcard')->name('destroy');
         Route::post('/{flashcard}/pause', PauseFlashcardController::class)->whereNumber('flashcard')->name('pause');

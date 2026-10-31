@@ -126,7 +126,7 @@ class SummarisePracticeSession
      *
      * @param  Collection<int, FlashcardReview>  $reviews
      * @param  Collection<int, Answer>  $answers
-     * @return array<int, array{id: int, title: string, mastery_before: int, mastery_after: int, next_review_on: ?string}>
+     * @return array<int, array{id: int, title: string, topic: array{id: int, title: string}, mastery_before: int, mastery_after: int, next_review_on: ?string}>
      */
     private function subtopics(StudySession $session, User $learner, Collection $reviews, Collection $answers): array
     {
@@ -145,7 +145,9 @@ class SummarisePracticeSession
 
         return Subtopic::query()
             ->whereIn('id', $subtopicIds)
-            ->with(SummariseSubtopicProgress::relations($learner))
+            ->with([...SummariseSubtopicProgress::relations($learner), 'topic:id,title'])
+            // A review of everything due spans topics: keep each topic's subtopics together.
+            ->orderBy('topic_id')
             ->orderBy('position')
             ->get()
             ->map(function (Subtopic $subtopic) use ($session, $timezone): array {
@@ -154,6 +156,7 @@ class SummarisePracticeSession
                 return [
                     'id' => $subtopic->id,
                     'title' => $subtopic->title,
+                    'topic' => ['id' => $subtopic->topic->id, 'title' => $subtopic->topic->title],
                     'mastery_before' => $session->mastery_before[$subtopic->id] ?? 0,
                     'mastery_after' => $session->mastery_after[$subtopic->id] ?? $progress['mastery'],
                     'next_review_on' => $progress['next_review_on'],

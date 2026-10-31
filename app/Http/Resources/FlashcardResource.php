@@ -27,6 +27,7 @@ class FlashcardResource extends JsonResource
 
         return [
             'id' => $flashcard->id,
+            'topic_id' => $flashcard->topic_id,
             'subtopic_id' => $flashcard->subtopic_id,
             'front' => $flashcard->front,
             'back' => $flashcard->back,

@@ -8,12 +8,16 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Starting a practice session: what to practise (a topic or one of its subtopics), how (the modes) and
- * the cards and questions the frontend picked for its blocks. Whether those fit the scope is checked in
- * StartPracticeSession.
+ * Starting a practice session: what to practise (a topic, one of its subtopics, or everything due today
+ * across topics), how (the modes) and the cards and questions the frontend picked for its blocks.
+ * Whether those fit the scope is checked in StartPracticeSession.
  */
 class StartPracticeSessionRequest extends FormRequest
 {
+    public const SCOPE_TOPIC = 'topic';
+
+    public const SCOPE_DUE = 'due';
+
     public function authorize(): bool
     {
         return true;
@@ -27,10 +31,12 @@ class StartPracticeSessionRequest extends FormRequest
     public function rules(): array
     {
         $learnersTopics = Rule::exists('topics', 'id')->where('user_id', $this->user()->id);
+        $isDueReview = $this->isDueReview();
 
         return [
-            'topic_id' => ['required', 'integer', $learnersTopics],
-            'subtopic_id' => ['nullable', 'integer', Rule::exists('subtopics', 'id')],
+            'scope' => ['nullable', Rule::in([self::SCOPE_TOPIC, self::SCOPE_DUE])],
+            'topic_id' => [Rule::requiredIf(! $isDueReview), Rule::prohibitedIf($isDueReview), 'integer', $learnersTopics],
+            'subtopic_id' => [Rule::prohibitedIf($isDueReview), 'nullable', 'integer', Rule::exists('subtopics', 'id')],
             'modes' => ['required', 'array', 'min:1'],
             'modes.*' => ['distinct', Rule::enum(PracticeMode::class)],
             'card_ids' => ['present', 'array', 'max:100'],
@@ -47,7 +53,10 @@ class StartPracticeSessionRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'scope.in' => 'Pick what to practise: a topic, or everything due today.',
             'topic_id.required' => 'Pick one of your topics to practise.',
+            'topic_id.prohibited' => 'A review of everything due covers all your topics. Leave the topic out.',
+            'subtopic_id.prohibited' => 'A review of everything due covers all your topics. Leave the subtopic out.',
             'topic_id.integer' => 'Pick one of your topics to practise.',
             'topic_id.exists' => 'Pick one of your topics to practise.',
             'subtopic_id.integer' => 'Pick a subtopic of this topic.',
@@ -70,5 +79,13 @@ class StartPracticeSessionRequest extends FormRequest
             'explain_subtopic_id.integer' => 'Pick a subtopic from what you\'re practising to explain.',
             'explain_subtopic_id.exists' => 'Pick a subtopic from what you\'re practising to explain.',
         ];
+    }
+
+    /**
+     * A review of everything due today, across topics, instead of one topic or subtopic.
+     */
+    public function isDueReview(): bool
+    {
+        return $this->input('scope') === self::SCOPE_DUE;
     }
 }

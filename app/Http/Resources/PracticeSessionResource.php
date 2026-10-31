@@ -25,7 +25,8 @@ class PracticeSessionResource extends JsonResource
 
         return [
             'id' => $session->id,
-            'topic' => ['id' => $session->topic->id, 'title' => $session->topic->title],
+            'scope' => $session->practiceScope(),
+            'topic' => $session->topic === null ? null : ['id' => $session->topic->id, 'title' => $session->topic->title],
             'subtopic' => $session->subtopic === null ? null : ['id' => $session->subtopic->id, 'title' => $session->subtopic->title],
             'plan' => $session->plan,
             'started_at' => $session->started_at,
