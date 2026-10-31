@@ -37,6 +37,7 @@
 // - An email change waits in email_changes until the link sent to the new address is opened.
 // - Sprout uses its own AI key, not the learner's: ai_credentials is unused and can be dropped later.
 // - Deleting an account removes the user row (everything cascades), its Sanctum tokens and its uploaded files.
+// - Every AI call that answers is logged in ai_calls, so usage is counted per learner and per kind of call.
 
 Project sprout {
   database_type: 'MySQL'
@@ -183,6 +184,30 @@ Table ai_credentials {
 
 Enum ai_provider {
   openai
+}
+
+Table ai_calls {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  kind ai_call_kind [not null]
+  model varchar(100) [not null, note: 'The model that answered; never shown to learners']
+  input_tokens int [not null]
+  output_tokens int [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, created_at)
+  }
+
+  Note: 'BUILT. One row per AI call that answered, written by RequestAiCompletion. Usage in settings counts these; a monthly allowance will too.'
+}
+
+Enum ai_call_kind {
+  tutor_reply
+  answer_check [note: 'Practice Hub; not logged yet']
+  explain_feedback [note: 'Practice Hub; not logged yet']
+  card_generation
 }
 
 // ---------------------------------------------------------------------------

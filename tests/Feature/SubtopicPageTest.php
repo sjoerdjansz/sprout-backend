@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AiCallKind;
 use App\Enums\SessionKind;
 use App\Models\Answer;
 use App\Models\Category;
@@ -126,6 +127,7 @@ class SubtopicPageTest extends TestCase
 
         $this->assertSame(3, $subtopic->flashcards()->where('user_id', $learner->id)->count());
         $this->assertSame(2, $subtopic->questions()->count());
+        $this->assertSame(AiCallKind::CardGeneration, $learner->aiCalls()->sole()->kind);
         Http::assertSent(function (Request $request): bool {
             $input = json_decode($request['messages'][1]['content'], true);
 

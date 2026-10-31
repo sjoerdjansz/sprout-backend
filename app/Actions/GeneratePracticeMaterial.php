@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\AiCallKind;
 use App\Enums\AiLevel;
 use App\Enums\QuestionType;
 use App\Exceptions\AiRequestFailed;
@@ -43,7 +44,8 @@ class GeneratePracticeMaterial
             schema: self::materialSchema(),
             maxCompletionTokens: config('ai.generation.max_completion_tokens'),
             timeoutSeconds: config('ai.generation.timeout_seconds'),
-            safetyIdentifier: $learner->aiSafetyIdentifier(),
+            learner: $learner,
+            kind: AiCallKind::CardGeneration,
         );
 
         $generatedSubtopics = $completion['content']['subtopics'];

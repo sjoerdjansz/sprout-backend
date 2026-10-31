@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\AiCallKind;
 use App\Enums\AiLevel;
 use App\Enums\Interest;
 use App\Enums\MessageRole;
@@ -50,7 +51,8 @@ class AskTutor
             schema: self::replySchema(),
             maxCompletionTokens: config('ai.chat.max_completion_tokens'),
             timeoutSeconds: config('ai.chat.timeout_seconds'),
-            safetyIdentifier: $learner->aiSafetyIdentifier(),
+            learner: $learner,
+            kind: AiCallKind::TutorReply,
         );
 
         return [

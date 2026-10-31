@@ -36,6 +36,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<AiCall, $this>
+     */
+    public function aiCalls(): HasMany
+    {
+        return $this->hasMany(AiCall::class);
+    }
+
+    /**
      * @return HasMany<EmailChange, $this>
      */
     public function emailChanges(): HasMany

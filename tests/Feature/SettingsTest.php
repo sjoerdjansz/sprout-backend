@@ -18,6 +18,7 @@ class SettingsTest extends TestCase
     {
         $this->getJson('/api/v1/settings')->assertUnauthorized();
         $this->patchJson('/api/v1/settings', ['theme' => 'dark'])->assertUnauthorized();
+        $this->getJson('/api/v1/settings/usage')->assertUnauthorized();
     }
 
     public function test_a_new_learner_gets_the_defaults(): void

@@ -34,6 +34,7 @@ use App\Http\Controllers\Settings\ExportFlashcardsController;
 use App\Http\Controllers\Settings\ExportLearnerDataController;
 use App\Http\Controllers\Settings\RequestEmailChangeController;
 use App\Http\Controllers\Settings\ResetProgressController;
+use App\Http\Controllers\Settings\ShowAiUsageController;
 use App\Http\Controllers\Settings\ShowSettingsController;
 use App\Http\Controllers\Settings\UpdateProfileController;
 use App\Http\Controllers\Settings\UpdateSettingsController;
@@ -75,6 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/settings', ShowSettingsController::class)->name('settings.show');
     Route::patch('/settings', UpdateSettingsController::class)->name('settings.update');
+    Route::get('/settings/usage', ShowAiUsageController::class)->name('settings.usage');
 });
 
 // Public: the token proves the learner owns the new address, also on a device where they aren't signed in.
