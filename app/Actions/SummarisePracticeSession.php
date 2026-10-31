@@ -78,7 +78,7 @@ class SummarisePracticeSession
             'xp_earned' => $reviews->count() * RecordPracticeActivity::XP_PER_CARD
                 + $quizAnswers->whereNotNull('score')->count() * RecordPracticeActivity::XP_PER_ANSWER
                 + $explanations->whereNotNull('score')->count() * RecordPracticeActivity::XP_PER_EXPLANATION,
-            'streak_days' => $this->calculateStreak->handle($learner),
+            'streak_days' => $this->calculateStreak->handle($learner)['current_days'],
             'subtopics' => $this->subtopics($session, $learner, $reviews, $session->answers),
         ];
     }
