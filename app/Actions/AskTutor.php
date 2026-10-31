@@ -89,6 +89,7 @@ class AskTutor
             'today' => now()->toDateString(),
             'learner' => [
                 'name' => $learner->name,
+                'role' => $learner->settings?->learner_role?->value,
                 'interests' => $learner->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
                 'categories' => $learner->categories()->orderBy('id')->pluck('name'),
             ],

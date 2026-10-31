@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AiLevel;
+use App\Enums\LearnerRole;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
 use App\Models\AiCredential;
@@ -64,7 +65,7 @@ class TutorConversationTest extends TestCase
     public function test_the_tutor_is_asked_with_sprouts_key_and_the_learners_level_and_profile(): void
     {
         $learner = $this->learnerWithAiConfigured();
-        $learner->settings->update(['ai_level' => AiLevel::Low]);
+        $learner->settings->update(['ai_level' => AiLevel::Low, 'learner_role' => LearnerRole::CareerSwitcher]);
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
 
@@ -78,6 +79,7 @@ class TutorConversationTest extends TestCase
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
                 && $context['learner']['name'] === 'Ada'
+                && $context['learner']['role'] === 'career_switcher'
                 && $context['saved_topic'] === null
                 && $request['messages'][2] === ['role' => 'user', 'content' => 'Teach me biomechanics'];
         });
