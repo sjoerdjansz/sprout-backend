@@ -80,12 +80,12 @@ class TopicsTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['category_id' => "We couldn't find that category. Pick one from the list."]);
 
-        $this->postJson('/api/v1/topics', ['title' => str_repeat('a', 256), 'category_name' => str_repeat('b', 61), 'notes' => str_repeat('c', 10001)])
+        $this->postJson('/api/v1/topics', ['title' => str_repeat('a', 256), 'category_name' => str_repeat('b', 61), 'notes' => str_repeat('c', 30001)])
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
                 'title' => 'Keep the topic name under 255 characters.',
                 'category_name' => 'Keep the category name under 60 characters.',
-                'notes' => 'Keep your notes under 10,000 characters.',
+                'notes' => 'Keep your notes under 30,000 characters.',
             ]);
 
         $this->assertDatabaseCount('topics', 0);
