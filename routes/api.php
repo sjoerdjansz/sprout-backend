@@ -18,6 +18,7 @@ use App\Http\Controllers\Flashcards\ResumeFlashcardController;
 use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
+use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
@@ -120,6 +121,11 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereNumber('topic')
             ->middleware('throttle:suggest-subtopics')
             ->name('subtopic-suggestions.store');
+        // One request adds them all, so it counts once against the limit for subtopics with notes.
+        Route::post('/{topic}/subtopics', AddSubtopicsController::class)
+            ->whereNumber('topic')
+            ->middleware('throttle:generate-material')
+            ->name('subtopics.store');
     });
 
     Route::prefix('subtopics')->name('subtopics.')->group(function () {
