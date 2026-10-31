@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Enums\GenerationStatus;
+use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Flashcard;
 use App\Models\Question;
 use App\Models\Subtopic;
@@ -9,8 +11,8 @@ use App\Models\SubtopicProgress;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
@@ -20,13 +22,14 @@ class SubtopicsTest extends TestCase
     use FakesOpenAi;
     use RefreshDatabase;
 
-    public function test_adding_a_subtopic_with_notes_generates_cards_and_questions_from_them(): void
+    public function test_adding_a_subtopic_with_notes_queues_cards_and_questions_from_them(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Coach better']);
         Subtopic::factory()->for($topic)->create(['position' => 4]);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Cadence', flashcards: 2)]])]);
+        Http::fake();
 
         $response = $this->postJson('/api/v1/subtopics', [
             'topic_id' => $topic->id,
@@ -36,40 +39,33 @@ class SubtopicsTest extends TestCase
         ]);
 
         $response->assertCreated()
+            ->assertExactJsonStructure(['subtopic' => ['id', 'topic_id', 'title', 'description', 'notes', 'generation_status', 'mastery', 'due_cards', 'next_review_on', 'is_new', 'slipping', 'facets' => ['cards' => ['percent', 'holding'], 'explain' => ['percent', 'holding'], 'quiz' => ['percent', 'holding']]]])
             ->assertJsonPath('subtopic.topic_id', $topic->id)
             ->assertJsonPath('subtopic.title', 'Cadence')
             ->assertJsonPath('subtopic.description', 'Steps per minute.')
             ->assertJsonPath('subtopic.notes', 'Most runners land around 170 to 180 steps per minute.')
-            ->assertJsonPath('subtopic.is_new', true)
-            ->assertJsonPath('subtopic.due_cards', 2)
-            ->assertJsonPath('added', ['flashcards' => 2, 'questions' => 1]);
+            ->assertJsonPath('subtopic.generation_status', 'generating')
+            ->assertJsonPath('subtopic.is_new', true);
 
         $subtopic = Subtopic::where('title', 'Cadence')->sole();
         $this->assertSame(5, $subtopic->position);
-        $this->assertSame(2, $subtopic->flashcards()->where('user_id', $learner->id)->where('topic_id', $topic->id)->count());
-        $this->assertNull($subtopic->flashcards()->first()->source_message_id);
-
-        Http::assertSent(function (Request $request): bool {
-            $input = json_decode($request['messages'][1]['content'], true);
-
-            return $input['topic'] === ['title' => 'Running', 'goal' => 'Coach better']
-                && $input['subtopics'] === [['title' => 'Cadence', 'content' => 'Most runners land around 170 to 180 steps per minute.', 'existing_items' => []]];
-        });
+        Http::assertNothingSent();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($subtopic) && $job->sourceMessageId === null);
     }
 
-    public function test_a_subtopic_without_notes_is_added_without_an_ai_call(): void
+    public function test_a_subtopic_without_notes_is_added_ready_without_a_job(): void
     {
+        Queue::fake();
         $learner = User::factory()->create();
         $topic = Topic::factory()->for($learner)->create();
         Sanctum::actingAs($learner);
-        Http::fake();
 
         $this->postJson('/api/v1/subtopics', ['topic_id' => $topic->id, 'title' => 'Cadence'])
             ->assertCreated()
             ->assertJsonPath('subtopic.notes', null)
-            ->assertJsonPath('added', ['flashcards' => 0, 'questions' => 0]);
+            ->assertJsonPath('subtopic.generation_status', 'ready');
 
-        Http::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_a_subtopic_needs_a_name_the_topic_does_not_have_yet_and_room_in_it(): void
@@ -104,28 +100,13 @@ class SubtopicsTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_nothing_is_added_when_generating_fails(): void
+    public function test_changed_notes_queue_material_and_unchanged_notes_queue_nothing(): void
     {
-        $learner = $this->learnerWithAiConfigured();
-        $topic = Topic::factory()->for($learner)->create();
-        Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);
-
-        $this->postJson('/api/v1/subtopics', ['topic_id' => $topic->id, 'title' => 'Cadence', 'notes' => 'Steps per minute.'])
-            ->assertServiceUnavailable()
-            ->assertJsonPath('message', "The tutor can't answer right now. Try again in a moment.");
-
-        $this->assertDatabaseCount('subtopics', 0);
-    }
-
-    public function test_changed_notes_get_material_for_what_is_new_and_unchanged_notes_get_nothing(): void
-    {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Cadence', 'content' => 'Steps per minute.']);
-        Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['front' => 'What is cadence?']);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Cadence', flashcards: 1)]])]);
 
         $this->putJson("/api/v1/subtopics/{$subtopic->id}", [
             'topic_id' => $topic->id,
@@ -135,10 +116,10 @@ class SubtopicsTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('subtopic.description', 'How fast your feet turn over.')
-            ->assertJsonPath('added', ['flashcards' => 1, 'questions' => 1]);
+            ->assertJsonPath('subtopic.generation_status', 'generating');
 
-        Http::assertSent(fn (Request $request): bool => json_decode($request['messages'][1]['content'], true)['subtopics'][0]['existing_items'] === ['What is cadence?']);
-        Http::fake();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
+        $subtopic->refresh()->update(['generation_status' => GenerationStatus::Ready]);
 
         $this->putJson("/api/v1/subtopics/{$subtopic->id}", [
             'topic_id' => $topic->id,
@@ -148,9 +129,9 @@ class SubtopicsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('subtopic.title', 'Step rate')
             ->assertJsonPath('subtopic.description', null)
-            ->assertJsonPath('added', ['flashcards' => 0, 'questions' => 0]);
+            ->assertJsonPath('subtopic.generation_status', 'ready');
 
-        Http::assertNothingSent();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
     }
 
     public function test_moving_a_subtopic_takes_its_cards_questions_and_progress_along(): void
@@ -194,24 +175,5 @@ class SubtopicsTest extends TestCase
 
         $this->assertSame('Theirs', $someoneElses->fresh()->title);
         $this->assertSame($topic->id, $mine->fresh()->topic_id);
-    }
-
-    /**
-     * Generated material for one subtopic, as the AI returns it: flashcards and one open question.
-     *
-     * @return array<string, mixed>
-     */
-    private function material(string $title, int $flashcards): array
-    {
-        return [
-            'title' => $title,
-            'flashcards' => array_map(fn (int $number): array => [
-                'front' => "Question {$number} about {$title}?",
-                'back' => "Answer {$number}.",
-            ], range(1, $flashcards)),
-            'questions' => [
-                ['type' => 'open', 'prompt' => "Explain {$title}.", 'model_answer' => 'A good answer.', 'options' => []],
-            ],
-        ];
     }
 }

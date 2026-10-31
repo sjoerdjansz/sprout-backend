@@ -122,8 +122,7 @@ class SubtopicPageTest extends TestCase
         $this->postJson("/api/v1/subtopics/{$subtopic->id}/generate")
             ->assertOk()
             ->assertJsonPath('subtopic.id', $subtopic->id)
-            ->assertJsonPath('subtopic.due_cards', 3)
-            ->assertJsonPath('added', ['flashcards' => 2, 'questions' => 1]);
+            ->assertJsonPath('subtopic.due_cards', 3);
 
         $this->assertSame(3, $subtopic->flashcards()->where('user_id', $learner->id)->count());
         $this->assertSame(2, $subtopic->questions()->count());

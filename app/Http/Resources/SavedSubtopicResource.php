@@ -7,10 +7,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * The result of adding or editing a subtopic: the subtopic as the knowledge map shows it, and the
- * flashcards and questions made from its notes.
+ * The result of adding or editing a subtopic: the subtopic as the knowledge map shows it. Flashcards and
+ * questions from its notes are made in the background; its generation_status says when they're ready.
  *
- * @property array{subtopic: Subtopic, progress: array<string, mixed>, added_flashcards: int, added_questions: int} $resource
+ * @property array{subtopic: Subtopic, progress: array<string, mixed>} $resource
  */
 class SavedSubtopicResource extends JsonResource
 {
@@ -26,10 +26,6 @@ class SavedSubtopicResource extends JsonResource
                 'subtopic' => $this->resource['subtopic'],
                 'progress' => $this->resource['progress'],
             ]),
-            'added' => [
-                'flashcards' => $this->resource['added_flashcards'],
-                'questions' => $this->resource['added_questions'],
-            ],
         ];
     }
 }
