@@ -21,6 +21,7 @@ use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicSourceController;
+use App\Http\Controllers\KnowledgeMap\DeleteTopicController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
@@ -127,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', ListTopicsController::class)->name('index');
         Route::post('/', StoreTopicController::class)->name('store');
         Route::put('/{topic}', UpdateTopicController::class)->whereNumber('topic')->name('update');
+        Route::delete('/{topic}', DeleteTopicController::class)->whereNumber('topic')->name('destroy');
         // Building a topic from its source (specs/topic-from-source.md).
         Route::post('/{topic}/subtopic-suggestions', SuggestSubtopicsController::class)
             ->whereNumber('topic')
