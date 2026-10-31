@@ -38,6 +38,13 @@
 // - Sprout uses its own AI key, not the learner's: ai_credentials is unused and can be dropped later.
 // - Deleting an account removes the user row (everything cascades), its Sanctum tokens and its uploaded files.
 // - Every AI call that answers is logged in ai_calls, so usage is counted per learner and per kind of call.
+//
+// Decisions (2026-10-31, specs/practice-session.md):
+// - Rating a card updates its SM-2 state (Anki-like: again = 10 minutes and start over, then 1 day, 3 days,
+//   interval x ease) and adds a flashcard_reviews row. No new columns.
+// - Every review and graded answer recalculates subtopic_progress.mastery: the average of the three facets,
+//   a facet not practised yet counting as 0. peak_mastery keeps the highest value.
+// - daily_activities is written by practice: 1 XP per card rated, 2 per question answered, right or wrong.
 
 Project sprout {
   database_type: 'MySQL'
@@ -459,7 +466,7 @@ Table subtopic_progress {
     (user_id, subtopic_id) [unique]
   }
 
-  Note: 'BUILT. Derived: recalculated from flashcard_reviews and answers after each one. Topic mastery = aggregate of its subtopics.'
+  Note: 'BUILT. Derived: recalculated after each card review and graded answer (RecalculateSubtopicMastery): mastery = average of the cards, explain and quiz facets, a facet not practised counting as 0. Topic mastery = aggregate of its subtopics.'
 }
 
 Table daily_activities {
@@ -476,5 +483,5 @@ Table daily_activities {
     (user_id, activity_date) [unique]
   }
 
-  Note: 'BUILT. Derived: one row per active day. Streaks are consecutive dates, total XP is the sum.'
+  Note: 'BUILT. Derived: one row per active day, written by practice (RecordPracticeActivity): 1 XP per card rated, 2 per question answered. Streaks are consecutive dates, total XP is the sum.'
 }

@@ -15,6 +15,7 @@ use App\Http\Controllers\Flashcards\DeleteFlashcardController;
 use App\Http\Controllers\Flashcards\ListFlashcardsController;
 use App\Http\Controllers\Flashcards\PauseFlashcardController;
 use App\Http\Controllers\Flashcards\ResumeFlashcardController;
+use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
@@ -131,6 +132,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{flashcard}', DeleteFlashcardController::class)->whereNumber('flashcard')->name('destroy');
         Route::post('/{flashcard}/pause', PauseFlashcardController::class)->whereNumber('flashcard')->name('pause');
         Route::post('/{flashcard}/resume', ResumeFlashcardController::class)->whereNumber('flashcard')->name('resume');
+        Route::post('/{flashcard}/reviews', ReviewFlashcardController::class)->whereNumber('flashcard')->name('reviews.store');
     });
 
     Route::delete('/questions/{question}', DeleteQuestionController::class)->whereNumber('question')->name('questions.destroy');
