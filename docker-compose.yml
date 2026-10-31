@@ -8,6 +8,17 @@ services:
       - mariadb
       - mailpit
 
+  # Runs queued jobs, such as generating flashcards and questions. queue:listen boots the app for every job,
+  # so code changes are picked up without a restart. Its timeout matches the longest job.
+  queue:
+    build: ./docker/php
+    command: php artisan queue:listen --timeout=180
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+
   nginx:
     image: nginx:alpine
     ports:
