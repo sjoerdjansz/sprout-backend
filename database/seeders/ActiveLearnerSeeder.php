@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Actions\CreateStarterCategories;
 use App\Enums\ContentOrigin;
 use App\Enums\Interest;
+use App\Enums\LearnerRole;
 use App\Enums\MaterialStatus;
 use App\Enums\MessageRole;
 use App\Enums\QuestionType;
@@ -41,6 +42,7 @@ class ActiveLearnerSeeder extends Seeder
 
         $ada->settings()->create([
             'interests' => [Interest::Science, Interest::Languages],
+            'learner_role' => LearnerRole::CareerSwitcher,
             'wants_daily_reminder' => true,
             'timezone' => 'Europe/Amsterdam',
             'daily_goal_cards' => 20,

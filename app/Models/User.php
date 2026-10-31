@@ -36,6 +36,22 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<EmailChange, $this>
+     */
+    public function emailChanges(): HasMany
+    {
+        return $this->hasMany(EmailChange::class);
+    }
+
+    /**
+     * The address a pending email change waits to be confirmed for, if any.
+     */
+    public function pendingEmail(): ?string
+    {
+        return $this->emailChanges()->usable()->latest('id')->value('new_email');
+    }
+
+    /**
      * Unused since 2026-10-31: Sprout uses its own AI key (ResolveAiKey). Kept until the table is dropped.
      *
      * @return HasMany<AiCredential, $this>

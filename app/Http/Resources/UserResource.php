@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\AvatarColor;
 use App\Enums\Interest;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -23,7 +24,10 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
+            // Set while a change of email waits to be confirmed from the new inbox.
+            'pending_email' => $this->pendingEmail(),
             'email_verified_at' => $this->email_verified_at,
+            'avatar_color' => ($this->settings?->avatar_color ?? AvatarColor::Sun)->value,
             // Sign up preferences live in user_settings; the response shape stays as documented in API.md.
             'interests' => $this->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
             'wants_daily_reminder' => $this->settings?->wants_daily_reminder ?? false,

@@ -28,6 +28,15 @@ use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
 use App\Http\Controllers\Questions\DeleteQuestionController;
 use App\Http\Controllers\Questions\ListQuestionsController;
+use App\Http\Controllers\Settings\ConfirmEmailChangeController;
+use App\Http\Controllers\Settings\DeleteAccountController;
+use App\Http\Controllers\Settings\ExportFlashcardsController;
+use App\Http\Controllers\Settings\ExportLearnerDataController;
+use App\Http\Controllers\Settings\RequestEmailChangeController;
+use App\Http\Controllers\Settings\ResetProgressController;
+use App\Http\Controllers\Settings\ShowSettingsController;
+use App\Http\Controllers\Settings\UpdateProfileController;
+use App\Http\Controllers\Settings\UpdateSettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/status', function () {
@@ -52,6 +61,26 @@ Route::prefix('auth')->name('auth.')->group(function () {
 Route::get('/user', CurrentUserController::class)
     ->middleware('auth:sanctum')
     ->name('user');
+
+// The settings page (specs/settings.md).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('user')->name('user.')->group(function () {
+        Route::patch('/', UpdateProfileController::class)->name('update');
+        Route::delete('/', DeleteAccountController::class)->name('destroy');
+        Route::post('/email', RequestEmailChangeController::class)->middleware('throttle:magic-link')->name('email.store');
+        Route::get('/export', ExportLearnerDataController::class)->middleware('throttle:account-data')->name('export');
+        Route::get('/export/flashcards', ExportFlashcardsController::class)->middleware('throttle:account-data')->name('export.flashcards');
+        Route::post('/progress/reset', ResetProgressController::class)->middleware('throttle:account-data')->name('progress.reset');
+    });
+
+    Route::get('/settings', ShowSettingsController::class)->name('settings.show');
+    Route::patch('/settings', UpdateSettingsController::class)->name('settings.update');
+});
+
+// Public: the token proves the learner owns the new address, also on a device where they aren't signed in.
+Route::post('/user/email/confirm', ConfirmEmailChangeController::class)
+    ->middleware('throttle:verify-magic-link')
+    ->name('user.email.confirm');
 
 Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.')->group(function () {
     Route::get('/', ListConversationsController::class)->name('index');
