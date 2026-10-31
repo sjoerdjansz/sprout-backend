@@ -19,6 +19,7 @@ use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
+use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
 use App\Http\Controllers\KnowledgeMap\ListTopicsController;
@@ -126,6 +127,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{subtopic}/flashcards', ListFlashcardsController::class)->whereNumber('subtopic')->name('flashcards.index');
         Route::post('/{subtopic}/flashcards', StoreFlashcardController::class)->whereNumber('subtopic')->name('flashcards.store');
         Route::get('/{subtopic}/questions', ListQuestionsController::class)->whereNumber('subtopic')->name('questions.index');
+        // Explanations are checked by the AI, like open answers, so they share that rate limit.
+        Route::post('/{subtopic}/explanations', ExplainSubtopicController::class)
+            ->whereNumber('subtopic')
+            ->middleware('throttle:answer-questions')
+            ->name('explanations.store');
     });
 
     Route::prefix('flashcards')->name('flashcards.')->group(function () {

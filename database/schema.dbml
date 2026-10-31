@@ -47,6 +47,10 @@
 // - daily_activities is written by practice: 1 XP per card rated, 2 per question answered, right or wrong.
 // - Only a question's outcome counts: a wrong first multiple choice pick is an answer without a score (ignored like
 //   any ungraded answer); right on the second try scores 60 with is_correct false, like a card rated hard.
+// - Every answer belongs to a question. An Explain it explanation answers the subtopic's first feynman question; a
+//   subtopic without one gets "Explain <subtopic> as if I'm 12." (origin ai) when it is first explained. Only the
+//   first version is scored (it counts for the explain facet, 10 XP); the simpler second version has feedback and
+//   gaps but no score.
 
 Project sprout {
   database_type: 'MySQL'
@@ -215,7 +219,7 @@ Table ai_calls {
 Enum ai_call_kind {
   tutor_reply
   answer_check [note: 'An open answer checked in the retrieval quiz']
-  explain_feedback [note: 'Practice Hub; not logged yet']
+  explain_feedback [note: 'An Explain it explanation checked in practice, first or second version']
   card_generation
 }
 
@@ -442,7 +446,7 @@ Table answers {
   score smallint [null, note: '0-100; null until graded, and for a wrong first multiple choice pick (another try follows). Right on the second try is 60']
   is_correct boolean [null, note: 'Right first time (multiple choice), or covering everything essential (open, from the AI)']
   feedback text [null, note: 'Tutor feedback: what was right, the missing piece, what next']
-  gaps json [null, note: 'Feynman: the gaps the tutor highlighted']
+  gaps json [null, note: 'Feynman: [{text, note}], text quoted exactly from response, note a question']
   answered_at timestamp [not null]
   created_at timestamp
   updated_at timestamp
@@ -485,5 +489,5 @@ Table daily_activities {
     (user_id, activity_date) [unique]
   }
 
-  Note: 'BUILT. Derived: one row per active day, written by practice (RecordPracticeActivity): 1 XP per card rated, 2 per question answered. Streaks are consecutive dates, total XP is the sum.'
+  Note: 'BUILT. Derived: one row per active day, written by practice (RecordPracticeActivity): 1 XP per card rated, 2 per question answered, 10 per Explain it (first version). Streaks are consecutive dates, total XP is the sum.'
 }

@@ -42,7 +42,7 @@ class AnswerQuestion
             QuestionType::MultipleChoice => $this->gradeChoice($question, $optionId, $isSecondTry, $doesNotKnow),
             QuestionType::Open => $this->gradeOpenAnswer($question, $learner, $response, $doesNotKnow),
             QuestionType::Feynman => throw ValidationException::withMessages([
-                'question' => 'Explain it answers can\'t be checked yet. Practise this one in the Explain it block.',
+                'question' => 'Answer Explain it questions in the Explain it block.',
             ]),
         };
 

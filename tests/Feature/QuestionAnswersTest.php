@@ -269,7 +269,7 @@ class QuestionAnswersTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_explain_it_questions_are_not_checked_here(): void
+    public function test_explain_it_questions_are_answered_elsewhere(): void
     {
         $question = $this->question(QuestionType::Feynman);
         Http::fake();
@@ -277,7 +277,7 @@ class QuestionAnswersTest extends TestCase
 
         $this->postJson("/api/v1/questions/{$question->id}/answers", ['response' => 'Plants use light to make sugar.'])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['question' => "Explain it answers can't be checked yet. Practise this one in the Explain it block."]);
+            ->assertJsonValidationErrors(['question' => 'Answer Explain it questions in the Explain it block.']);
 
         Http::assertNothingSent();
     }

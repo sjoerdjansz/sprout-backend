@@ -15,7 +15,12 @@ class RecordPracticeActivity
 
     public const XP_PER_ANSWER = 2;
 
-    public function handle(User $learner, int $cardsReviewed = 0, int $questionsAnswered = 0): void
+    public const XP_PER_EXPLANATION = 10;
+
+    /**
+     * @param  int  $explanationsChecked  Explain it first versions; they earn XP but have no counter of their own
+     */
+    public function handle(User $learner, int $cardsReviewed = 0, int $questionsAnswered = 0, int $explanationsChecked = 0): void
     {
         $today = now($learner->timezone())->toDateString();
 
@@ -24,6 +29,8 @@ class RecordPracticeActivity
 
         $activity->increment('cards_reviewed', $cardsReviewed);
         $activity->increment('questions_answered', $questionsAnswered);
-        $activity->increment('xp_earned', $cardsReviewed * self::XP_PER_CARD + $questionsAnswered * self::XP_PER_ANSWER);
+        $activity->increment('xp_earned', $cardsReviewed * self::XP_PER_CARD
+            + $questionsAnswered * self::XP_PER_ANSWER
+            + $explanationsChecked * self::XP_PER_EXPLANATION);
     }
 }
