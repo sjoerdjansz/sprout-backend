@@ -38,14 +38,9 @@ class QuestionResource extends JsonResource
                 'is_correct' => $option->is_correct,
                 'explanation' => $option->explanation,
             ])->values(),
-            'latest_answer' => $answer === null ? null : [
-                'response' => $answer->response,
-                'option_id' => $answer->question_option_id,
-                'score' => $answer->score,
-                'verdict' => $this->resource['verdict']->value,
-                'feedback' => $answer->feedback,
-                'answered_at' => $answer->answered_at,
-            ],
+            'latest_answer' => $answer === null
+                ? null
+                : new AnswerResource(['answer' => $answer, 'verdict' => $this->resource['verdict']]),
             'created_at' => $question->created_at,
         ];
     }

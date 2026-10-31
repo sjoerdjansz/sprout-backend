@@ -8,8 +8,9 @@ namespace App\Enums;
 enum AiCallKind: string
 {
     case TutorReply = 'tutor_reply';
-    // Checking open answers and Explain it feedback come with the Practice Hub; nothing logs them yet.
+    // Checking an open answer in the retrieval quiz (CheckOpenAnswer).
     case AnswerCheck = 'answer_check';
+    // Explain it feedback comes with the Practice Hub; nothing logs it yet.
     case ExplainFeedback = 'explain_feedback';
     case CardGeneration = 'card_generation';
 }

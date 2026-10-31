@@ -45,6 +45,8 @@
 // - Every review and graded answer recalculates subtopic_progress.mastery: the average of the three facets,
 //   a facet not practised yet counting as 0. peak_mastery keeps the highest value.
 // - daily_activities is written by practice: 1 XP per card rated, 2 per question answered, right or wrong.
+// - Only a question's outcome counts: a wrong first multiple choice pick is an answer without a score (ignored like
+//   any ungraded answer); right on the second try scores 60 with is_correct false, like a card rated hard.
 
 Project sprout {
   database_type: 'MySQL'
@@ -212,7 +214,7 @@ Table ai_calls {
 
 Enum ai_call_kind {
   tutor_reply
-  answer_check [note: 'Practice Hub; not logged yet']
+  answer_check [note: 'An open answer checked in the retrieval quiz']
   explain_feedback [note: 'Practice Hub; not logged yet']
   card_generation
 }
@@ -437,8 +439,8 @@ Table answers {
   study_session_id bigint [null, ref: > study_sessions.id, note: 'Set null when the session is deleted']
   question_option_id bigint [null, ref: > question_options.id, note: 'The chosen option (multiple_choice)']
   response text [null, note: 'The typed answer or explanation (open, feynman)']
-  score smallint [null, note: '0-100; null until graded']
-  is_correct boolean [null]
+  score smallint [null, note: '0-100; null until graded, and for a wrong first multiple choice pick (another try follows). Right on the second try is 60']
+  is_correct boolean [null, note: 'Right first time (multiple choice), or covering everything essential (open, from the AI)']
   feedback text [null, note: 'Tutor feedback: what was right, the missing piece, what next']
   gaps json [null, note: 'Feynman: the gaps the tutor highlighted']
   answered_at timestamp [not null]

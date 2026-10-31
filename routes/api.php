@@ -27,6 +27,7 @@ use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Questions\AnswerQuestionController;
 use App\Http\Controllers\Questions\DeleteQuestionController;
 use App\Http\Controllers\Questions\ListQuestionsController;
 use App\Http\Controllers\Settings\ConfirmEmailChangeController;
@@ -136,4 +137,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::delete('/questions/{question}', DeleteQuestionController::class)->whereNumber('question')->name('questions.destroy');
+    // Open answers are checked by the AI, so answering has a rate limit of its own.
+    Route::post('/questions/{question}/answers', AnswerQuestionController::class)
+        ->whereNumber('question')
+        ->middleware('throttle:answer-questions')
+        ->name('questions.answers.store');
 });

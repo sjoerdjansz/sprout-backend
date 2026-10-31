@@ -90,6 +90,15 @@ class AppServiceProvider extends ServiceProvider
                 $headers,
             )));
 
+        // Generous for clicking through multiple choice; it stops a loop from running up AI calls on open answers.
+        RateLimiter::for('answer-questions', fn (Request $request): Limit => Limit::perMinute(30)
+            ->by((string) $request->user()?->id)
+            ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
+                ['message' => "You're answering very quickly. Wait a moment and try again."],
+                429,
+                $headers,
+            )));
+
         // Exports and resets read or write all of a learner's data, so a few per minute is plenty.
         RateLimiter::for('account-data', fn (Request $request): Limit => Limit::perMinute(5)
             ->by((string) $request->user()?->id)
