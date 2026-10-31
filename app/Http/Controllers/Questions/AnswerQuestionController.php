@@ -22,6 +22,7 @@ class AnswerQuestionController extends Controller
             response: $request->validated('response'),
             isSecondTry: $request->boolean('second_try'),
             doesNotKnow: $request->boolean('dont_know'),
+            practiceSession: $request->practiceSession(),
         );
 
         return (new AnsweredQuestionResource($result))->response()->setStatusCode(201);

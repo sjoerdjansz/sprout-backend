@@ -20,6 +20,7 @@ class ReviewFlashcardController extends Controller
             flashcard: $flashcard,
             learner: $request->user(),
             rating: ReviewRating::from($request->validated('rating')),
+            practiceSession: $request->practiceSession(),
         );
 
         return (new ReviewedFlashcardResource($result))->response()->setStatusCode(201);

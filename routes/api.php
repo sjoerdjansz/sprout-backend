@@ -28,6 +28,10 @@ use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Practice\FinishPracticeSessionController;
+use App\Http\Controllers\Practice\ListSubtopicPracticeSessionsController;
+use App\Http\Controllers\Practice\ShowCurrentPracticeSessionController;
+use App\Http\Controllers\Practice\StartPracticeSessionController;
 use App\Http\Controllers\Questions\AnswerQuestionController;
 use App\Http\Controllers\Questions\DeleteQuestionController;
 use App\Http\Controllers\Questions\ListQuestionsController;
@@ -127,6 +131,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{subtopic}/flashcards', ListFlashcardsController::class)->whereNumber('subtopic')->name('flashcards.index');
         Route::post('/{subtopic}/flashcards', StoreFlashcardController::class)->whereNumber('subtopic')->name('flashcards.store');
         Route::get('/{subtopic}/questions', ListQuestionsController::class)->whereNumber('subtopic')->name('questions.index');
+        Route::get('/{subtopic}/practice-sessions', ListSubtopicPracticeSessionsController::class)->whereNumber('subtopic')->name('practice-sessions.index');
         // Explanations are checked by the AI, like open answers, so they share that rate limit.
         Route::post('/{subtopic}/explanations', ExplainSubtopicController::class)
             ->whereNumber('subtopic')
@@ -143,6 +148,13 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::delete('/questions/{question}', DeleteQuestionController::class)->whereNumber('question')->name('questions.destroy');
+    // Practice sessions (specs/practice-session.md).
+    Route::prefix('practice-sessions')->name('practice-sessions.')->group(function () {
+        Route::post('/', StartPracticeSessionController::class)->name('store');
+        Route::get('/current', ShowCurrentPracticeSessionController::class)->name('current');
+        Route::post('/{practiceSession}/finish', FinishPracticeSessionController::class)->whereNumber('practiceSession')->name('finish');
+    });
+
     // Open answers are checked by the AI, so answering has a rate limit of its own.
     Route::post('/questions/{question}/answers', AnswerQuestionController::class)
         ->whereNumber('question')

@@ -51,6 +51,11 @@
 //   subtopic without one gets "Explain <subtopic> as if I'm 12." (origin ai) when it is first explained. Only the
 //   first version is scored (it counts for the explain facet, 10 XP); the simpler second version has feedback and
 //   gaps but no score.
+// - A practice session is a review study_session with its subtopic, plan and mastery before and after. Ratings,
+//   answers and explanations point to it through study_session_id, so its totals and XP are worked out from them.
+//   One session is open at a time: starting one finishes the open one, and finishing an empty one deletes it.
+//   It can be resumed until the end of the day it started (learner's timezone). Reset progress deletes them.
+// - The streak is the run of consecutive daily_activities dates ending today, or yesterday while today isn't over.
 
 Project sprout {
   database_type: 'MySQL'
@@ -299,20 +304,24 @@ Enum material_status {
 Table study_sessions {
   id bigint [pk, increment]
   user_id bigint [not null, ref: > users.id]
-  topic_id bigint [null, ref: > topics.id, note: 'Null for a mixed (interleaved) review session. Cascades: deleting a topic deletes its sessions']
+  topic_id bigint [null, ref: > topics.id, note: 'Learn sessions: null until saved. Review sessions: the topic practised. Cascades: deleting a topic deletes its sessions']
+  subtopic_id bigint [null, ref: > subtopics.id, note: 'Review sessions: the subtopic practised; null for a whole topic']
   kind session_kind [not null]
   draft json [null, note: 'Learn sessions: the tutor\'s draft of the topic {title, goal {description, deadline, recall_percentage}, subtopics [{title, content}]}']
+  plan json [null, note: 'Review sessions: {modes, card_ids, question_ids, explain_subtopic_id} as the frontend picked them, so a reload can resume']
+  mastery_before json [null, note: 'Review sessions: {subtopic_id: mastery} of the scope\'s subtopics when it started']
+  mastery_after json [null, note: 'Review sessions: the same when it was finished; null while it is open']
   started_at timestamp [not null]
-  ended_at timestamp [null, note: 'Learn sessions: set when saved to the knowledge map; read-only after that']
+  ended_at timestamp [null, note: 'Learn sessions: set when saved to the knowledge map; read-only after that. Review sessions: set when finished or replaced by a new one']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. One chat conversation ("conversation" in the API for learn sessions). topic_id is null for a mixed review, and for a learn session until it is saved.'
+  Note: 'BUILT. A learn session is a conversation with the tutor ("conversation" in the API). A review session is a practice session ("practice session" in the API): its flashcard_reviews, answers and messages point to it, and its totals are worked out from them.'
 }
 
 Enum session_kind {
-  learn
-  review
+  learn [note: 'A conversation exploring a topic with the tutor']
+  review [note: 'A practice session on a topic or one of its subtopics']
 }
 
 Table messages {

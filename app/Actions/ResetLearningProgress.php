@@ -7,9 +7,9 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * "Reset progress" in settings: wipes the learner's learning history (reviews, answers, mastery, streaks
- * and XP) and makes every card new again. Their topics, subtopics, cards, questions and conversations
- * stay. Can't be undone.
+ * "Reset progress" in settings: wipes the learner's learning history (reviews, answers, practice sessions,
+ * mastery, streaks and XP) and makes every card new again. Their topics, subtopics, cards, questions and
+ * conversations stay. Can't be undone.
  */
 class ResetLearningProgress
 {
@@ -18,6 +18,7 @@ class ResetLearningProgress
         DB::transaction(function () use ($user): void {
             FlashcardReview::whereIn('flashcard_id', $user->flashcards()->select('id'))->delete();
             $user->answers()->delete();
+            $user->practiceSessions()->delete();
             $user->subtopicProgress()->delete();
             $user->dailyActivities()->delete();
 

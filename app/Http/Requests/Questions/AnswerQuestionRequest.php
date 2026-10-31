@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Questions;
 
+use App\Http\Requests\Practice\LinksPracticeSession;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -11,6 +12,8 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class AnswerQuestionRequest extends FormRequest
 {
+    use LinksPracticeSession;
+
     /**
      * Ownership of the question is checked when it is looked up: someone else's is a 404.
      */
@@ -27,6 +30,7 @@ class AnswerQuestionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            ...$this->practiceSessionRules(),
             'option_id' => ['nullable', 'integer'],
             'response' => ['nullable', 'string', 'max:5000'],
             'second_try' => ['sometimes', 'boolean'],
@@ -40,6 +44,7 @@ class AnswerQuestionRequest extends FormRequest
     public function messages(): array
     {
         return [
+            ...$this->practiceSessionMessages(),
             'option_id.integer' => 'Pick one of this question\'s options.',
             'response.string' => 'Write your answer first.',
             'response.max' => 'Keep your answer under 5,000 characters.',

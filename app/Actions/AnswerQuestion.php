@@ -8,6 +8,7 @@ use App\Exceptions\AiRequestFailed;
 use App\Models\Answer;
 use App\Models\Question;
 use App\Models\QuestionOption;
+use App\Models\StudySession;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,7 +37,7 @@ class AnswerQuestion
      * @throws ValidationException when the answer doesn't fit the question.
      * @throws AiRequestFailed
      */
-    public function handle(Question $question, User $learner, ?int $optionId, ?string $response, bool $isSecondTry, bool $doesNotKnow): array
+    public function handle(Question $question, User $learner, ?int $optionId, ?string $response, bool $isSecondTry, bool $doesNotKnow, ?StudySession $practiceSession = null): array
     {
         $grade = match ($question->type) {
             QuestionType::MultipleChoice => $this->gradeChoice($question, $optionId, $isSecondTry, $doesNotKnow),
@@ -49,9 +50,10 @@ class AnswerQuestion
         // Only an answer with a score is the outcome of the question; a wrong first pick gets another try.
         $isGraded = $grade['score'] !== null;
 
-        return DB::transaction(function () use ($question, $learner, $grade, $isGraded): array {
+        return DB::transaction(function () use ($question, $learner, $grade, $isGraded, $practiceSession): array {
             $answer = $question->answers()->create([
                 'user_id' => $learner->id,
+                'study_session_id' => $practiceSession?->id,
                 'question_option_id' => $grade['option_id'],
                 'response' => $grade['response'],
                 'score' => $grade['score'],

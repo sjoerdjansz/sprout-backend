@@ -11,10 +11,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * One chat conversation. A review session has no topic, because it mixes topics. A learn session
- * ("conversation" in the API) has no topic until it is saved, and is read-only after that.
+ * A learn session ("conversation" in the API) explores a topic with the tutor: it has no topic until it is
+ * saved, and is read-only after that. A review session is a practice session on a topic or one of its
+ * subtopics: its card reviews, answers and messages point to it.
  */
-#[Fillable(['user_id', 'topic_id', 'kind', 'draft', 'started_at', 'ended_at'])]
+#[Fillable(['user_id', 'topic_id', 'subtopic_id', 'kind', 'draft', 'plan', 'mastery_before', 'mastery_after', 'started_at', 'ended_at'])]
 class StudySession extends Model
 {
     /** @use HasFactory<StudySessionFactory> */
@@ -34,6 +35,30 @@ class StudySession extends Model
     public function topic(): BelongsTo
     {
         return $this->belongsTo(Topic::class);
+    }
+
+    /**
+     * @return BelongsTo<Subtopic, $this>
+     */
+    public function subtopic(): BelongsTo
+    {
+        return $this->belongsTo(Subtopic::class);
+    }
+
+    /**
+     * @return HasMany<FlashcardReview, $this>
+     */
+    public function flashcardReviews(): HasMany
+    {
+        return $this->hasMany(FlashcardReview::class);
+    }
+
+    /**
+     * @return HasMany<Answer, $this>
+     */
+    public function answers(): HasMany
+    {
+        return $this->hasMany(Answer::class);
     }
 
     /**
@@ -69,6 +94,9 @@ class StudySession extends Model
         return [
             'kind' => SessionKind::class,
             'draft' => 'array',
+            'plan' => 'array',
+            'mastery_before' => 'array',
+            'mastery_after' => 'array',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
         ];

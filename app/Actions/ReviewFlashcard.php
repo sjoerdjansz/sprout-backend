@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Enums\ReviewRating;
 use App\Models\Flashcard;
+use App\Models\StudySession;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -24,14 +25,15 @@ class ReviewFlashcard
     /**
      * @return array{flashcard: Flashcard, schedule: array<string, mixed>, subtopic_progress: ?array<string, mixed>}
      */
-    public function handle(Flashcard $flashcard, User $learner, ReviewRating $rating): array
+    public function handle(Flashcard $flashcard, User $learner, ReviewRating $rating, ?StudySession $practiceSession = null): array
     {
-        return DB::transaction(function () use ($flashcard, $learner, $rating): array {
+        return DB::transaction(function () use ($flashcard, $learner, $rating, $practiceSession): array {
             $now = now();
             $intervalBefore = $flashcard->interval_days;
 
             $flashcard->update($this->scheduleFlashcard->handle($flashcard, $rating, $now));
             $flashcard->reviews()->create([
+                'study_session_id' => $practiceSession?->id,
                 'rating' => $rating,
                 'interval_days_before' => $intervalBefore,
                 'interval_days_after' => $flashcard->interval_days,

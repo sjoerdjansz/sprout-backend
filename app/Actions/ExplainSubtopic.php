@@ -8,6 +8,7 @@ use App\Enums\QuestionType;
 use App\Exceptions\AiRequestFailed;
 use App\Models\Answer;
 use App\Models\Question;
+use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,7 @@ class ExplainSubtopic
      * @throws ValidationException when the second version comes before a first one.
      * @throws AiRequestFailed
      */
-    public function handle(Subtopic $subtopic, User $learner, string $explanation, int $version): array
+    public function handle(Subtopic $subtopic, User $learner, string $explanation, int $version, ?StudySession $practiceSession = null): array
     {
         $question = $subtopic->questions()->where('type', QuestionType::Feynman)->orderBy('id')->first();
         $prompt = $question?->prompt ?? self::defaultPrompt($subtopic);
@@ -54,7 +55,7 @@ class ExplainSubtopic
             firstVersion: $firstVersion,
         );
 
-        return DB::transaction(function () use ($subtopic, $learner, $explanation, $question, $prompt, $isFirstVersion, $check): array {
+        return DB::transaction(function () use ($subtopic, $learner, $explanation, $question, $prompt, $isFirstVersion, $check, $practiceSession): array {
             $question ??= $subtopic->questions()->create([
                 'topic_id' => $subtopic->topic_id,
                 'type' => QuestionType::Feynman,
@@ -65,6 +66,7 @@ class ExplainSubtopic
 
             $answer = $question->answers()->create([
                 'user_id' => $learner->id,
+                'study_session_id' => $practiceSession?->id,
                 'response' => $explanation,
                 // A second version without a score stays out of the facet, like any ungraded answer.
                 'score' => $isFirstVersion ? $check['score'] : null,

@@ -120,6 +120,16 @@ class User extends Authenticatable
     }
 
     /**
+     * The learner's practice sessions (specs/practice-session.md).
+     *
+     * @return HasMany<StudySession, $this>
+     */
+    public function practiceSessions(): HasMany
+    {
+        return $this->studySessions()->where('kind', SessionKind::Review);
+    }
+
+    /**
      * @return HasMany<Flashcard, $this>
      */
     public function flashcards(): HasMany

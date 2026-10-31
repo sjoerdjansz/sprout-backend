@@ -20,6 +20,7 @@ class ExplainSubtopicController extends Controller
             learner: $request->user(),
             explanation: $request->validated('explanation'),
             version: (int) $request->validated('version'),
+            practiceSession: $request->practiceSession(),
         );
 
         return (new ExplanationResource($result))->response()->setStatusCode(201);

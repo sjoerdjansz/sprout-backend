@@ -3,6 +3,7 @@
 namespace App\Http\Requests\KnowledgeMap;
 
 use App\Actions\ExplainSubtopic;
+use App\Http\Requests\Practice\LinksPracticeSession;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -11,6 +12,8 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class ExplainSubtopicRequest extends FormRequest
 {
+    use LinksPracticeSession;
+
     /**
      * Ownership of the subtopic is checked when it is looked up: someone else's is a 404.
      */
@@ -27,6 +30,7 @@ class ExplainSubtopicRequest extends FormRequest
     public function rules(): array
     {
         return [
+            ...$this->practiceSessionRules(),
             'explanation' => ['required', 'string', 'max:5000'],
             'version' => ['required', 'integer', 'in:'.ExplainSubtopic::FIRST_VERSION.','.ExplainSubtopic::SECOND_VERSION],
         ];
@@ -38,6 +42,7 @@ class ExplainSubtopicRequest extends FormRequest
     public function messages(): array
     {
         return [
+            ...$this->practiceSessionMessages(),
             'explanation.required' => 'Write your explanation first.',
             'explanation.string' => 'Write your explanation first.',
             'explanation.max' => 'Keep your explanation under 5,000 characters.',
