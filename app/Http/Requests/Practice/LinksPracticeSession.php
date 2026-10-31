@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Practice;
 
+use App\Actions\SendPracticeMessage;
 use App\Enums\SessionKind;
 use App\Models\StudySession;
 use Illuminate\Validation\Rule;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rules\Exists;
  */
 trait LinksPracticeSession
 {
-    public const PRACTICE_SESSION_ENDED = 'This practice session has ended. Start a new one to keep practising.';
+    public const PRACTICE_SESSION_ENDED = SendPracticeMessage::SESSION_ENDED_MESSAGE;
 
     /**
      * @return array<string, array<int, string|Exists>>

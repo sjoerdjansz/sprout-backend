@@ -56,6 +56,8 @@
 //   One session is open at a time: starting one finishes the open one, and finishing an empty one deletes it.
 //   It can be resumed until the end of the day it started (learner's timezone). Reset progress deletes them.
 // - The streak is the run of consecutive daily_activities dates ending today, or yesterday while today isn't over.
+// - The open session of a practice session is messages on that review session (with a technique per tutor turn),
+//   so it never shows in the chat history. Its tutor knows the scope's cards and open questions, weakest first.
 
 Project sprout {
   database_type: 'MySQL'
@@ -329,7 +331,7 @@ Table messages {
   study_session_id bigint [not null, ref: > study_sessions.id]
   role message_role [not null]
   content text [not null]
-  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI). Practice sessions only: null in a conversation with the tutor']
+  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI). Practice sessions (review) only: null in a conversation with the tutor']
   model varchar(100) [null, note: 'Tutor turns: the AI model that wrote it']
   input_tokens int [null, note: 'Tutor turns: tokens billed to the learner\'s key']
   output_tokens int [null]

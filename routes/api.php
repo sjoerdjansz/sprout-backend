@@ -30,6 +30,7 @@ use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
 use App\Http\Controllers\Practice\FinishPracticeSessionController;
 use App\Http\Controllers\Practice\ListSubtopicPracticeSessionsController;
+use App\Http\Controllers\Practice\SendPracticeMessageController;
 use App\Http\Controllers\Practice\ShowCurrentPracticeSessionController;
 use App\Http\Controllers\Practice\StartPracticeSessionController;
 use App\Http\Controllers\Questions\AnswerQuestionController;
@@ -153,6 +154,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', StartPracticeSessionController::class)->name('store');
         Route::get('/current', ShowCurrentPracticeSessionController::class)->name('current');
         Route::post('/{practiceSession}/finish', FinishPracticeSessionController::class)->whereNumber('practiceSession')->name('finish');
+        Route::post('/{practiceSession}/messages', SendPracticeMessageController::class)
+            ->whereNumber('practiceSession')
+            ->middleware('throttle:tutor-messages')
+            ->name('messages.store');
     });
 
     // Open answers are checked by the AI, so answering has a rate limit of its own.

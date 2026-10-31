@@ -6,6 +6,7 @@ use App\Enums\AnswerVerdict;
 use App\Enums\QuestionType;
 use App\Models\Answer;
 use App\Models\FlashcardReview;
+use App\Models\Message;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\User;
@@ -30,7 +31,7 @@ class SummarisePracticeSession
      */
     public function handle(StudySession $session, User $learner): array
     {
-        $session->loadMissing(['topic', 'subtopic', 'flashcardReviews.flashcard', 'answers.question'])->loadCount('messages');
+        $session->loadMissing(['topic', 'subtopic', 'flashcardReviews.flashcard', 'answers.question', 'messages']);
 
         $reviews = $session->flashcardReviews->sortBy('id')->values();
         [$explanations, $quizAnswers] = $session->answers
@@ -65,7 +66,14 @@ class SummarisePracticeSession
                     'verdict' => $answer->score === null ? null : AnswerVerdict::of($answer)->value,
                     'answered_at' => $answer->answered_at,
                 ])->all(),
-                'message_count' => $session->messages_count,
+                'messages' => $session->messages->sortBy('id')->map(fn (Message $message): array => [
+                    'id' => $message->id,
+                    'role' => $message->role->value,
+                    'content' => $message->content,
+                    'technique' => $message->technique?->value,
+                    'created_at' => $message->created_at,
+                ])->values()->all(),
+                'message_count' => $session->messages->count(),
             ],
             'xp_earned' => $reviews->count() * RecordPracticeActivity::XP_PER_CARD
                 + $quizAnswers->whereNotNull('score')->count() * RecordPracticeActivity::XP_PER_ANSWER
@@ -103,7 +111,7 @@ class SummarisePracticeSession
      */
     private function lastActivityAt(StudySession $session, Collection $reviews, Collection $answers): CarbonInterface
     {
-        $moments = collect([$session->started_at, $session->messages()->max('created_at')])
+        $moments = collect([$session->started_at, $session->messages->max('created_at')])
             ->merge($reviews->pluck('reviewed_at'))
             ->merge($answers->pluck('answered_at'))
             ->filter()

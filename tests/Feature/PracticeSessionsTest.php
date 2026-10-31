@@ -81,7 +81,7 @@ class PracticeSessionsTest extends TestCase
             ->assertJsonPath('started_at', '2026-10-31T09:00:00.000000Z')
             ->assertJsonPath('ended_at', null)
             ->assertJsonPath('is_finished', false)
-            ->assertJsonPath('done', ['flashcard_reviews' => [], 'answers' => [], 'explanations' => [], 'message_count' => 0])
+            ->assertJsonPath('done', ['flashcard_reviews' => [], 'answers' => [], 'explanations' => [], 'messages' => [], 'message_count' => 0])
             ->assertJsonPath('xp_earned', 0)
             ->assertJsonPath('subtopics', []);
 
