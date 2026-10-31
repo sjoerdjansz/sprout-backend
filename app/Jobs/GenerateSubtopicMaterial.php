@@ -5,8 +5,6 @@ namespace App\Jobs;
 use App\Actions\GeneratePracticeMaterial;
 use App\Actions\StorePracticeMaterial;
 use App\Enums\GenerationStatus;
-use App\Enums\MaterialStatus;
-use App\Models\Material;
 use App\Models\Subtopic;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -79,13 +77,6 @@ class GenerateSubtopicMaterial implements ShouldQueue
                     ...$subtopic->questions()->pluck('prompt'),
                 ],
             ]],
-            // The topic's files are read in full; the prompt picks the part that belongs to this subtopic.
-            sources: $topic->materials()
-                ->where('status', MaterialStatus::Ready)
-                ->orderBy('id')
-                ->get()
-                ->map(fn (Material $source): array => ['name' => $source->original_filename, 'text' => $source->extracted_text])
-                ->all(),
         )[0];
 
         DB::transaction(function () use ($subtopic, $topic, $material, $storePracticeMaterial): void {

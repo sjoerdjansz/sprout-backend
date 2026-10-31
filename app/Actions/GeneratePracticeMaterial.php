@@ -25,12 +25,11 @@ class GeneratePracticeMaterial
      *
      * @param  array{title: string, goal: string}  $topic
      * @param  array<int, array{title: string, content: string, existing_items: array<int, string>}>  $subtopics
-     * @param  array<int, array{name: string, text: string}>  $sources  the text of the topic's files (specs/chat-attachments.md)
      * @return array<int, array{flashcards: array<int, array{front: string, back: string}>, questions: array<int, array{type: QuestionType, prompt: string, model_answer: ?string, options: array<int, array{label: string, is_correct: bool, explanation: ?string}>}>}>
      *
      * @throws AiRequestFailed
      */
-    public function handle(User $learner, array $topic, array $subtopics, array $sources): array
+    public function handle(User $learner, array $topic, array $subtopics): array
     {
         $level = $learner->settings?->ai_level ?? AiLevel::Medium;
 
@@ -40,7 +39,7 @@ class GeneratePracticeMaterial
             reasoningEffort: $level->generationReasoningEffort(),
             instructions: file_get_contents(resource_path('prompts/practice-material.md')),
             messages: [
-                ['role' => 'user', 'content' => json_encode(['topic' => $topic, 'sources' => $sources, 'subtopics' => $subtopics])],
+                ['role' => 'user', 'content' => json_encode(['topic' => $topic, 'subtopics' => $subtopics])],
             ],
             schemaName: 'practice_material',
             schema: self::materialSchema(),
