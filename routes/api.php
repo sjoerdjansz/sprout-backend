@@ -26,6 +26,7 @@ use App\Http\Controllers\KnowledgeMap\ListTopicsController;
 use App\Http\Controllers\KnowledgeMap\ShowSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
+use App\Http\Controllers\KnowledgeMap\SuggestSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
 use App\Http\Controllers\Practice\FinishPracticeSessionController;
@@ -114,6 +115,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', ListTopicsController::class)->name('index');
         Route::post('/', StoreTopicController::class)->name('store');
         Route::put('/{topic}', UpdateTopicController::class)->whereNumber('topic')->name('update');
+        // Building a topic from its source (specs/topic-from-source.md).
+        Route::post('/{topic}/subtopic-suggestions', SuggestSubtopicsController::class)
+            ->whereNumber('topic')
+            ->middleware('throttle:suggest-subtopics')
+            ->name('subtopic-suggestions.store');
     });
 
     Route::prefix('subtopics')->name('subtopics.')->group(function () {

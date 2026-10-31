@@ -228,6 +228,7 @@ Enum ai_call_kind {
   answer_check [note: 'An open answer checked in the retrieval quiz']
   explain_feedback [note: 'An Explain it explanation checked in practice, first or second version']
   card_generation
+  subtopic_suggestions [note: 'A topic\'s source read to suggest the subtopics it falls into']
 }
 
 // ---------------------------------------------------------------------------

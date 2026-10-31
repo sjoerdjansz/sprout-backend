@@ -25,6 +25,7 @@ class AiUsageTest extends TestCase
         $this->callAt($learner, AiCallKind::TutorReply, '2026-10-12 09:00');
         $this->callAt($learner, AiCallKind::CardGeneration, '2026-10-12 10:00');
         $this->callAt($learner, AiCallKind::AnswerCheck, '2026-10-13 10:00');
+        $this->callAt($learner, AiCallKind::SubtopicSuggestions, '2026-10-14 10:00');
         $this->callAt($learner, AiCallKind::TutorReply, '2026-09-30 09:00');
 
         $response = $this->getJson('/api/v1/settings/usage');
@@ -35,7 +36,8 @@ class AiUsageTest extends TestCase
             'answers_checked' => 1,
             'explain_feedback' => 0,
             'card_batches' => 1,
-            'total' => 4,
+            'subtopic_suggestions' => 1,
+            'total' => 5,
         ]);
     }
 

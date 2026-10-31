@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 class SummariseAiUsage
 {
     /**
-     * @return array{month: string, tutor_replies: int, answers_checked: int, explain_feedback: int, card_batches: int, total: int}
+     * @return array{month: string, tutor_replies: int, answers_checked: int, explain_feedback: int, card_batches: int, subtopic_suggestions: int, total: int}
      */
     public function handle(User $user): array
     {
@@ -33,6 +33,7 @@ class SummariseAiUsage
             'answers_checked' => $countOf(AiCallKind::AnswerCheck),
             'explain_feedback' => $countOf(AiCallKind::ExplainFeedback),
             'card_batches' => $countOf(AiCallKind::CardGeneration),
+            'subtopic_suggestions' => $countOf(AiCallKind::SubtopicSuggestions),
             'total' => (int) $callsPerKind->sum(),
         ];
     }
