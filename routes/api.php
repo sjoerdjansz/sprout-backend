@@ -30,6 +30,9 @@ use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\SuggestSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Materials\DeleteMaterialController;
+use App\Http\Controllers\Materials\ShowMaterialController;
+use App\Http\Controllers\Materials\StoreMaterialController;
 use App\Http\Controllers\Practice\FinishPracticeSessionController;
 use App\Http\Controllers\Practice\ListSubtopicPracticeSessionsController;
 use App\Http\Controllers\Practice\SendPracticeMessageController;
@@ -107,6 +110,13 @@ Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.
         ->whereNumber('conversation')
         ->middleware('throttle:save-conversations')
         ->name('save');
+});
+
+// Files attached in the chat (specs/chat-attachments.md).
+Route::middleware('auth:sanctum')->prefix('materials')->name('materials.')->group(function () {
+    Route::post('/', StoreMaterialController::class)->middleware('throttle:upload-materials')->name('store');
+    Route::get('/{material}', ShowMaterialController::class)->whereNumber('material')->name('show');
+    Route::delete('/{material}', DeleteMaterialController::class)->whereNumber('material')->name('destroy');
 });
 
 Route::middleware('auth:sanctum')->group(function () {

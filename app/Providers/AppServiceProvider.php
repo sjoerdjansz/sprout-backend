@@ -66,6 +66,15 @@ class AppServiceProvider extends ServiceProvider
                 $headers,
             )));
 
+        // Reading files costs no AI, but each one takes disk space and a turn of the queue.
+        RateLimiter::for('upload-materials', fn (Request $request): Limit => Limit::perMinute(20)
+            ->by((string) $request->user()?->id)
+            ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
+                ['message' => "You're uploading quickly. Wait a moment and try again."],
+                429,
+                $headers,
+            )));
+
         RateLimiter::for('save-conversations', fn (Request $request): Limit => Limit::perMinute(5)
             ->by((string) $request->user()?->id)
             ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
