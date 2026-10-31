@@ -18,6 +18,7 @@ use App\Http\Controllers\Flashcards\ResumeFlashcardController;
 use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
+use App\Http\Controllers\Insights\ShowWeeklyInsightsController;
 use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicSourceController;
@@ -123,6 +124,8 @@ Route::middleware('auth:sanctum')->prefix('materials')->name('materials.')->grou
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/categories', ListCategoriesController::class)->name('categories.index');
+    // The dashboard's "This week" row (specs/weekly-insights.md).
+    Route::get('/insights/week', ShowWeeklyInsightsController::class)->name('insights.week');
 
     Route::prefix('topics')->name('topics.')->group(function () {
         Route::get('/', ListTopicsController::class)->name('index');
