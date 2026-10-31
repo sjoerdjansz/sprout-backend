@@ -3,7 +3,6 @@
 namespace App\Actions;
 
 use App\Enums\MessageRole;
-use App\Exceptions\AiRequestFailed;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\Topic;
@@ -13,16 +12,16 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Saves the reviewed draft of a conversation as a topic in the knowledge map, generates flashcards and
+ * Saves the reviewed draft of a conversation as a topic in the knowledge map, queues flashcards and
  * questions for what is new, and ends the conversation. Continuing a topic adds to the same topic.
+ * The AI isn't called here: the material is made in the background (specs/background-generation.md).
  */
 class SaveConversationToKnowledgeMap
 {
     public const CATEGORY_REQUIRED_MESSAGE = 'Pick a category for this topic.';
 
     public function __construct(
-        private GeneratePracticeMaterial $generatePracticeMaterial,
-        private StorePracticeMaterial $storePracticeMaterial,
+        private QueueMaterialGeneration $queueMaterialGeneration,
         private ResolveCategory $resolveCategory,
     ) {}
 
@@ -30,10 +29,9 @@ class SaveConversationToKnowledgeMap
      * @param  array<int, array{title: string, content: string}>  $subtopics  as reviewed by the learner
      * @param  int|null  $categoryId  one of the learner's categories; with $categoryName, required for a new topic
      * @param  string|null  $categoryName  a new category, or an existing one by name
-     * @return array{topic: Topic, added_subtopics: int, added_flashcards: int, added_questions: int}
+     * @return array{topic: Topic, added_subtopics: int}
      *
      * @throws ValidationException when the conversation is already saved, or a new topic has no category.
-     * @throws AiRequestFailed when generating fails; nothing is saved then.
      */
     public function handle(
         StudySession $conversation,
@@ -49,7 +47,7 @@ class SaveConversationToKnowledgeMap
             throw ValidationException::withMessages(['conversation' => SendMessageToTutor::ALREADY_SAVED_MESSAGE]);
         }
 
-        $topic = $conversation->topic?->load('category', 'subtopics.flashcards', 'subtopics.questions');
+        $topic = $conversation->topic?->load('category', 'subtopics');
         $hasCategory = $categoryId !== null || $categoryName !== null;
 
         // A continued topic keeps its category unless the learner picked another one.
@@ -57,34 +55,9 @@ class SaveConversationToKnowledgeMap
             throw ValidationException::withMessages(['category_id' => self::CATEGORY_REQUIRED_MESSAGE]);
         }
         $existingSubtopics = $topic?->subtopics->keyBy(fn (Subtopic $subtopic): string => Str::lower($subtopic->title)) ?? collect();
+        $keysNeedingMaterial = $this->keysNeedingMaterial($existingSubtopics, $subtopics);
 
-        // Only new subtopics and those whose notes changed need material; the rest is already covered.
-        $subtopicsNeedingMaterial = [];
-
-        foreach ($subtopics as $subtopic) {
-            $existing = $existingSubtopics->get(Str::lower($subtopic['title']));
-
-            if ($existing !== null && trim((string) $existing->content) === trim($subtopic['content'])) {
-                continue;
-            }
-
-            $subtopicsNeedingMaterial[] = [
-                'title' => $subtopic['title'],
-                'content' => $subtopic['content'],
-                'existing_items' => $existing === null ? [] : [
-                    ...$existing->flashcards->pluck('front'),
-                    ...$existing->questions->pluck('prompt'),
-                ],
-            ];
-        }
-
-        $material = $subtopicsNeedingMaterial === [] ? [] : $this->generatePracticeMaterial->handle(
-            learner: $conversation->user,
-            topic: ['title' => $title, 'goal' => $goal],
-            subtopics: $subtopicsNeedingMaterial,
-        );
-
-        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $categoryId, $categoryName, $hasCategory, $subtopicsNeedingMaterial, $material): array {
+        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $keysNeedingMaterial, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $categoryId, $categoryName, $hasCategory): array {
             $topicAttributes = [
                 'title' => $title,
                 'goal' => $goal,
@@ -104,18 +77,9 @@ class SaveConversationToKnowledgeMap
 
             $savedSubtopics = $this->saveSubtopics($topic, $existingSubtopics, $subtopics);
             $sourceMessageId = $conversation->messages()->where('role', MessageRole::Tutor)->latest('id')->value('id');
-            $addedFlashcards = 0;
-            $addedQuestions = 0;
 
-            foreach ($subtopicsNeedingMaterial as $index => $subtopicNeedingMaterial) {
-                $added = $this->storePracticeMaterial->handle(
-                    subtopic: $savedSubtopics[Str::lower($subtopicNeedingMaterial['title'])],
-                    learnerId: $conversation->user_id,
-                    material: $material[$index],
-                    sourceMessageId: $sourceMessageId,
-                );
-                $addedFlashcards += $added['flashcards'];
-                $addedQuestions += $added['questions'];
+            foreach ($keysNeedingMaterial as $key) {
+                $this->queueMaterialGeneration->handle($savedSubtopics[$key], $sourceMessageId);
             }
 
             $conversation->update([
@@ -132,10 +96,31 @@ class SaveConversationToKnowledgeMap
             return [
                 'topic' => $topic,
                 'added_subtopics' => count(array_diff_key($savedSubtopics, $existingSubtopics->all())),
-                'added_flashcards' => $addedFlashcards,
-                'added_questions' => $addedQuestions,
             ];
         });
+    }
+
+    /**
+     * Only new subtopics and those whose notes changed need material; the rest is already covered.
+     *
+     * @param  Collection<string, Subtopic>  $existingSubtopics  keyed by lowercase title
+     * @param  array<int, array{title: string, content: string}>  $subtopics
+     * @return array<int, string> the lowercase titles of the subtopics that need material
+     */
+    private function keysNeedingMaterial(Collection $existingSubtopics, array $subtopics): array
+    {
+        $keys = [];
+
+        foreach ($subtopics as $subtopic) {
+            $key = Str::lower($subtopic['title']);
+            $existing = $existingSubtopics->get($key);
+
+            if ($existing === null || trim((string) $existing->content) !== trim($subtopic['content'])) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
     }
 
     /**
