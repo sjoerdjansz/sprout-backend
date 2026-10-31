@@ -20,6 +20,7 @@ class ExportLearnerData
             'topics.category',
             'topics.subtopics' => fn (HasMany $query) => $query->orderBy('position'),
             'topics.subtopics.progress',
+            'topics.subtopics.sources.material',
             'topics.flashcards' => fn (HasMany $query) => $query->orderBy('id'),
             'topics.flashcards.reviews' => fn (HasMany $query) => $query->orderBy('reviewed_at'),
             'topics.questions' => fn (HasMany $query) => $query->orderBy('id'),
@@ -27,6 +28,7 @@ class ExportLearnerData
             'topics.questions.answers' => fn (HasMany $query) => $query->orderBy('answered_at'),
             'studySessions' => fn (HasMany $query) => $query->orderBy('started_at'),
             'studySessions.messages' => fn (HasMany $query) => $query->orderBy('id'),
+            'materials' => fn (HasMany $query) => $query->orderBy('id'),
             'dailyActivities' => fn (HasMany $query) => $query->orderBy('activity_date'),
         ]);
     }

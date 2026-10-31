@@ -70,6 +70,7 @@ class SummariseSubtopicProgress
     public static function relations(User $learner): array
     {
         return [
+            'sources',
             'flashcards.reviews',
             'questions.answers' => fn (Relation $query) => $query->where('user_id', $learner->id),
             'progress' => fn (Relation $query) => $query->where('user_id', $learner->id),

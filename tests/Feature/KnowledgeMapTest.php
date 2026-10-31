@@ -34,7 +34,7 @@ class KnowledgeMapTest extends TestCase
             'goal_recall_percentage' => 85,
         ]);
         Subtopic::factory()->for($topic)->create(['title' => 'Calvin cycle', 'position' => 2]);
-        $first = Subtopic::factory()->for($topic)->create(['title' => 'Light', 'description' => 'What light does.', 'content' => 'Red and blue.', 'position' => 1]);
+        $first = Subtopic::factory()->for($topic)->withTutorNotes('From the chat.')->withOwnNotes('Red and blue.')->create(['title' => 'Light', 'description' => 'What light does.', 'position' => 1]);
         Topic::factory()->for($learner)->archived()->create();
         Topic::factory()->create();
         Sanctum::actingAs($learner);
@@ -55,6 +55,7 @@ class KnowledgeMapTest extends TestCase
                 'title' => 'Light',
                 'description' => 'What light does.',
                 'notes' => 'Red and blue.',
+                'source_count' => 2,
                 'generation_status' => 'ready',
                 'mastery' => 0,
                 'due_cards' => 0,

@@ -105,7 +105,7 @@ class AskPracticeTutor
             'topic' => ['title' => $topic->title, 'goal' => $topic->goal],
             'subtopic' => $session->subtopic === null ? null : [
                 'title' => $session->subtopic->title,
-                'notes' => $session->subtopic->content,
+                'notes' => $session->subtopic->sourceText(),
                 'mastery_percentage' => $masteryPerSubtopic[$session->subtopic->id] ?? 0,
             ],
             'subtopics' => $subtopics->map(fn (Subtopic $subtopic): array => [

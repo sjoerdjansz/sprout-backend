@@ -15,9 +15,13 @@ class SendMessageController extends Controller
         // Looked up among the learner's own conversations, so someone else's is a 404.
         $conversation = $request->user()->conversations()->findOrFail($conversation);
 
-        $sendMessageToTutor->handle($conversation, $request->validated('message'));
+        $sendMessageToTutor->handle(
+            $conversation,
+            $request->validated('message'),
+            $request->user()->materials()->whereKey($request->validated('material_ids', []))->get(),
+        );
 
-        return (new ConversationResource($conversation->load('topic', 'messages')))
+        return (new ConversationResource($conversation->load('topic', 'messages.materials')))
             ->response()
             ->setStatusCode(201);
     }

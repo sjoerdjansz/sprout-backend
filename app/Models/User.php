@@ -68,6 +68,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<Material, $this>
+     */
+    public function materials(): HasMany
+    {
+        return $this->hasMany(Material::class);
+    }
+
+    /**
      * @return HasMany<Topic, $this>
      */
     public function topics(): HasMany

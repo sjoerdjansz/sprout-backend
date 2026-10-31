@@ -7,6 +7,7 @@ use App\Enums\AiLevel;
 use App\Enums\Interest;
 use App\Enums\MessageRole;
 use App\Exceptions\AiRequestFailed;
+use App\Models\Material;
 use App\Models\Message;
 use App\Models\SubtopicProgress;
 use App\Models\Topic;
@@ -26,12 +27,13 @@ class AskTutor
 
     /**
      * @param  array<string, mixed>  $draft  the tutor's draft so far (see emptyDraft())
-     * @param  Collection<int, Message>  $recentMessages  the latest messages, oldest first
+     * @param  Collection<int, Message>  $recentMessages  the latest messages, oldest first, with their materials
+     * @param  Collection<int, Material>  $newMaterials  the files sent with the new message, read
      * @return array{reply: string, draft: array<string, mixed>, model: string, input_tokens: int, output_tokens: int}
      *
      * @throws AiRequestFailed
      */
-    public function handle(User $learner, ?Topic $savedTopic, array $draft, Collection $recentMessages, string $newMessage): array
+    public function handle(User $learner, ?Topic $savedTopic, array $draft, Collection $recentMessages, string $newMessage, Collection $newMaterials): array
     {
         $level = $learner->settings?->ai_level ?? AiLevel::Medium;
 
@@ -44,9 +46,9 @@ class AskTutor
                 ['role' => 'developer', 'content' => 'Context: '.json_encode($this->context($learner, $savedTopic, $draft))],
                 ...$recentMessages->map(fn (Message $message): array => [
                     'role' => $message->role === MessageRole::Tutor ? 'assistant' : 'user',
-                    'content' => $message->content,
+                    'content' => $this->withAttachedFiles($message->content, $message->materials),
                 ]),
-                ['role' => 'user', 'content' => $newMessage],
+                ['role' => 'user', 'content' => $this->withAttachedFiles($newMessage, $newMaterials)],
             ],
             schemaName: 'tutor_reply',
             schema: self::replySchema(),
@@ -63,6 +65,21 @@ class AskTutor
             'input_tokens' => $completion['input_tokens'],
             'output_tokens' => $completion['output_tokens'],
         ];
+    }
+
+    /**
+     * The tutor reads a file's text with the message it was sent with, for as long as that message is
+     * among the recent ones (specs/chat-attachments.md).
+     *
+     * @param  Collection<int, Material>  $materials
+     */
+    private function withAttachedFiles(string $content, Collection $materials): string
+    {
+        foreach ($materials as $material) {
+            $content .= "\n\nAttached file \"{$material->original_filename}\":\n<<<\n{$material->extracted_text}\n>>>";
+        }
+
+        return $content;
     }
 
     /**

@@ -43,7 +43,7 @@ class CheckExplanation
                     'concept' => $subtopic->title,
                     'prompt' => $prompt,
                     'key_points' => $keyPoints,
-                    'notes' => $subtopic->content,
+                    'notes' => $subtopic->sourceText(),
                     'flashcards' => $subtopic->flashcards
                         ->whereNull('suspended_at')
                         ->map(fn (Flashcard $flashcard): array => ['front' => $flashcard->front, 'back' => $flashcard->back])

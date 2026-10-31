@@ -37,10 +37,9 @@ class ExplanationsTest extends TestCase
         $this->travelTo('2026-10-31 09:00:00');
         $this->learner = $this->learnerWithAiConfigured();
         $this->topic = Topic::factory()->for($this->learner)->create();
-        $this->subtopic = Subtopic::factory()->for($this->topic)->create([
-            'title' => 'Photosynthesis',
-            'content' => 'Plants turn light, water and CO2 into sugar and oxygen in their chloroplasts.',
-        ]);
+        $this->subtopic = Subtopic::factory()->for($this->topic)
+            ->withTutorNotes('Plants turn light, water and CO2 into sugar and oxygen in their chloroplasts.')
+            ->create(['title' => 'Photosynthesis']);
         Http::preventStrayRequests();
     }
 
@@ -89,7 +88,7 @@ class ExplanationsTest extends TestCase
                     'concept' => 'Photosynthesis',
                     'prompt' => "Explain Photosynthesis as if I'm 12.",
                     'key_points' => null,
-                    'notes' => 'Plants turn light, water and CO2 into sugar and oxygen in their chloroplasts.',
+                    'notes' => "## From the chat\n\nPlants turn light, water and CO2 into sugar and oxygen in their chloroplasts.",
                     // Paused cards are left out, as in the practice session's key points.
                     'flashcards' => [['front' => 'What is made?', 'back' => 'Sugar.']],
                     'first_version' => null,

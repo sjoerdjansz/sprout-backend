@@ -2,7 +2,6 @@
 
 namespace App\Actions;
 
-use App\Models\Material;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -16,7 +15,7 @@ class DeleteAccount
 {
     public function handle(User $user): void
     {
-        $materialPaths = Material::whereIn('topic_id', $user->topics()->select('id'))->pluck('storage_path');
+        $materialPaths = $user->materials()->pluck('storage_path');
 
         DB::transaction(function () use ($user): void {
             $user->tokens()->delete();

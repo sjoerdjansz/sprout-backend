@@ -13,6 +13,7 @@ use App\Models\Question;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\SubtopicProgress;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\UserSetting;
@@ -41,6 +42,11 @@ class AccountDataTest extends TestCase
         $learner = $this->learner();
         $topic = $this->topicWithLearningData($learner);
         $this->topicWithLearningData(User::factory()->create());
+        $lecture = Material::factory()->for($topic)->create(['original_filename' => 'Lecture 1.pdf', 'extracted_text' => 'Cadence is steps per minute.']);
+        $subtopic = $topic->subtopics()->sole();
+        SubtopicSource::factory()->for($subtopic)->file($lecture)->create(['content' => 'Cadence is steps per minute.']);
+        SubtopicSource::factory()->for($subtopic)->tutor()->create(['content' => 'Stance and swing phases.']);
+        Material::factory()->create();
 
         $response = $this->get('/api/v1/user/export');
 
@@ -52,10 +58,18 @@ class AccountDataTest extends TestCase
             ->assertJsonPath('topics.0.title', $topic->title)
             ->assertJsonCount(1, 'topics.0.subtopics')
             ->assertJsonPath('topics.0.subtopics.0.mastery', 60)
+            ->assertJsonPath('topics.0.subtopics.0.sources', [
+                ['type' => 'tutor', 'file' => null, 'content' => 'Stance and swing phases.'],
+                ['type' => 'file', 'file' => 'Lecture 1.pdf', 'content' => 'Cadence is steps per minute.'],
+            ])
             ->assertJsonPath('topics.0.flashcards.0.reviews.0.rating', 'good')
             ->assertJsonCount(1, 'topics.0.questions.0.answers')
             ->assertJsonCount(1, 'conversations')
             ->assertJsonCount(1, 'conversations.0.messages')
+            ->assertJsonCount(1, 'materials')
+            ->assertJsonPath('materials.0.topic_id', $topic->id)
+            ->assertJsonPath('materials.0.original_filename', 'Lecture 1.pdf')
+            ->assertJsonPath('materials.0.extracted_text', 'Cadence is steps per minute.')
             ->assertJsonCount(1, 'daily_activity');
     }
 
@@ -126,6 +140,8 @@ class AccountDataTest extends TestCase
         $topic = $this->topicWithLearningData($learner);
         $material = Material::factory()->for($topic)->create();
         Storage::disk('local')->put($material->storage_path, 'notes');
+        $unsentMaterial = Material::factory()->unsent()->for($learner)->create();
+        Storage::disk('local')->put($unsentMaterial->storage_path, 'notes');
         $otherLearner = User::factory()->create();
 
         $this->withToken($token)->deleteJson('/api/v1/user', ['email' => ' Ada@Example.com '])->assertNoContent();
@@ -134,6 +150,8 @@ class AccountDataTest extends TestCase
         $this->assertDatabaseCount('personal_access_tokens', 0);
         $this->assertDatabaseMissing('topics', ['id' => $topic->id]);
         Storage::disk('local')->assertMissing($material->storage_path);
+        Storage::disk('local')->assertMissing($unsentMaterial->storage_path);
+        $this->assertModelMissing($unsentMaterial);
         $this->assertModelExists($otherLearner);
     }
 

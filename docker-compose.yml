@@ -19,6 +19,16 @@ services:
       - mariadb
     restart: unless-stopped
 
+  # Runs scheduled tasks, such as pruning attachments that were uploaded but never sent.
+  scheduler:
+    build: ./docker/php
+    command: php artisan schedule:work
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+
   nginx:
     image: nginx:alpine
     ports:

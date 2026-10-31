@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * One chat turn, by the learner or the tutor.
@@ -25,6 +26,16 @@ class Message extends Model
     public function studySession(): BelongsTo
     {
         return $this->belongsTo(StudySession::class);
+    }
+
+    /**
+     * The files the learner attached to this message (specs/chat-attachments.md).
+     *
+     * @return HasMany<Material, $this>
+     */
+    public function materials(): HasMany
+    {
+        return $this->hasMany(Material::class);
     }
 
     /**

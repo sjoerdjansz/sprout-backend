@@ -22,6 +22,8 @@ class MessageResource extends JsonResource
             'id' => $this->id,
             'role' => $this->role->value,
             'content' => $this->content,
+            // Only sent with the full conversation; a preview leaves them out.
+            'materials' => MaterialResource::collection($this->whenLoaded('materials')),
             'created_at' => $this->created_at,
         ];
     }

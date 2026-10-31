@@ -249,13 +249,34 @@ Table subtopics {
   topic_id bigint [not null, ref: > topics.id]
   title varchar(255) [not null]
   description text [null, note: 'What the subtopic should cover, in a line']
-  content text [null, note: 'The notes its cards and questions are made from: what the tutor explained, or the learner\'s notes ("notes" in the API)']
   position smallint [not null, note: 'Order within the topic']
   generation_status generation_status [not null, default: 'ready', note: 'Whether its flashcards and questions are still being made in the background (specs/background-generation.md)']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. The concepts a topic is split into; the unit mastery is tracked on.'
+  Note: 'BUILT. The concepts a topic is split into; the unit mastery is tracked on. What its cards are made from is in subtopic_sources (content was dropped on 2026-10-31).'
+}
+
+Table subtopic_sources {
+  id bigint [pk, increment]
+  subtopic_id bigint [not null, ref: > subtopics.id, note: 'Cascades: deleting a subtopic deletes its sources']
+  type source_type [not null]
+  material_id bigint [null, ref: > materials.id, note: 'File sources only: the uploaded file this is a part of. Cascades with the file']
+  content text [not null, note: 'At most 10,000 characters. Tutor and own: notes in Markdown; file: the file\'s blocks, word for word']
+  created_at timestamp
+  updated_at timestamp
+
+  indexes {
+    (subtopic_id, material_id) [unique]
+  }
+
+  Note: 'BUILT. What a subtopic\'s flashcards and questions are made from (specs/subtopic-sources.md). At most one tutor and one own source per subtopic (enforced in the code), one file source per file.'
+}
+
+Enum source_type {
+  tutor [note: 'The tutor\'s notes from the conversation it was saved from; replaced by a later conversation']
+  own [note: 'The learner\'s own notes; the only source they can edit']
+  file [note: 'The part of an uploaded file that belongs to the subtopic']
 }
 
 Enum generation_status {
@@ -266,17 +287,24 @@ Enum generation_status {
 
 Table materials {
   id bigint [pk, increment]
-  topic_id bigint [not null, ref: > topics.id]
+  user_id bigint [not null, ref: > users.id, note: 'Who uploaded it; a file belongs to a learner before it has a topic']
+  topic_id bigint [null, ref: > topics.id, note: 'Null until the conversation it was sent in is saved; then a source of the topic']
+  message_id bigint [null, ref: > messages.id, note: 'The learner\'s message it was sent with; null until sent. Set to null when the conversation is deleted']
   original_filename varchar(255) [not null]
-  storage_path varchar(255) [not null]
-  mime_type varchar(100) [not null]
+  storage_path varchar(255) [not null, note: 'On the private local disk: materials/{user_id}/{uuid}.{extension}']
+  mime_type varchar(100) [not null, note: 'Detected from the contents']
   size_bytes int [not null]
-  extracted_text longtext [null, note: 'Text the tutor uses as source']
+  extracted_text longtext [null, note: 'The text read from the file (at most 60,000 characters); the tutor and card generation use it']
   status material_status [not null, default: 'processing']
+  error varchar(255) [null, note: 'Why reading failed, shown to the learner; null unless failed']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. Uploaded notes and PDFs (MVP). Belongs to a topic; the tutor maps it onto subtopics itself.'
+  indexes {
+    (user_id, created_at)
+  }
+
+  Note: 'BUILT. Files attached in the chat: PDF, Word, Pages, text and Markdown (specs/chat-attachments.md). Read into text in the background; files never sent are pruned after a day.'
 }
 
 Enum material_status {

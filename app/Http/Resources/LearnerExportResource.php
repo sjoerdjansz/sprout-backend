@@ -7,11 +7,13 @@ use App\Models\Category;
 use App\Models\DailyActivity;
 use App\Models\Flashcard;
 use App\Models\FlashcardReview;
+use App\Models\Material;
 use App\Models\Message;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\StudySession;
 use App\Models\Subtopic;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -63,7 +65,12 @@ class LearnerExportResource extends JsonResource
                     'id' => $subtopic->id,
                     'title' => $subtopic->title,
                     'description' => $subtopic->description,
-                    'notes' => $subtopic->content,
+                    // What its cards are made from: the tutor's notes, your own notes and the parts of your files.
+                    'sources' => $subtopic->sources->map(fn (SubtopicSource $source): array => [
+                        'type' => $source->type->value,
+                        'file' => $source->material?->original_filename,
+                        'content' => $source->content,
+                    ]),
                     'position' => $subtopic->position,
                     'mastery' => $subtopic->progress->first()?->mastery,
                     'last_studied_at' => $subtopic->progress->first()?->last_studied_at,
@@ -127,6 +134,15 @@ class LearnerExportResource extends JsonResource
                     'technique' => $message->technique?->value,
                     'created_at' => $message->created_at,
                 ]),
+            ]),
+            // The text Sprout read from each uploaded file; the files themselves aren't part of the export.
+            'materials' => $this->materials->map(fn (Material $material): array => [
+                'id' => $material->id,
+                'topic_id' => $material->topic_id,
+                'original_filename' => $material->original_filename,
+                'status' => $material->status->value,
+                'extracted_text' => $material->extracted_text,
+                'created_at' => $material->created_at,
             ]),
             'daily_activity' => $this->dailyActivities->map(fn (DailyActivity $activity): array => [
                 'date' => $activity->activity_date->toDateString(),

@@ -8,8 +8,8 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * "Generate from sources" on the subtopic page: more flashcards and questions from the subtopic's
- * notes, its only source for now, made in the background (specs/background-generation.md). The job
+ * "Generate from sources" on the subtopic page: more flashcards and questions from all of the subtopic's
+ * sources (specs/subtopic-sources.md), made in the background (specs/background-generation.md). The job
  * passes the existing cards and questions along, so the AI adds what they don't cover yet. This is
  * also how a subtopic whose generation failed is tried again.
  */
@@ -29,7 +29,7 @@ class GenerateMoreMaterial
      */
     public function handle(Subtopic $subtopic, User $learner): array
     {
-        if (trim((string) $subtopic->content) === '') {
+        if (! $subtopic->sources()->exists()) {
             throw ValidationException::withMessages([
                 'notes' => 'Add notes to this subtopic first, so we can make cards from them.',
             ]);

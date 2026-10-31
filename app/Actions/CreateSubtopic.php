@@ -2,20 +2,22 @@
 
 namespace App\Actions;
 
+use App\Enums\SourceType;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Adds a subtopic to a topic by hand, at the end. When it has notes, its flashcards and questions are
- * made from them in the background (specs/background-generation.md).
+ * Adds a subtopic to a topic by hand, at the end. Its notes are the learner's own source; when it has
+ * them, its flashcards and questions are made in the background (specs/background-generation.md).
  */
 class CreateSubtopic
 {
     public function __construct(
         private EnsureSubtopicFitsTopic $ensureSubtopicFitsTopic,
         private QueueMaterialGeneration $queueMaterialGeneration,
+        private SaveSubtopicSource $saveSubtopicSource,
         private SummariseSubtopicProgress $summariseSubtopicProgress,
     ) {}
 
@@ -32,11 +34,10 @@ class CreateSubtopic
             $subtopic = $topic->subtopics()->create([
                 'title' => $title,
                 'description' => $description,
-                'content' => $notes,
                 'position' => ($topic->subtopics()->max('position') ?? 0) + 1,
             ]);
 
-            if ($notes !== null) {
+            if ($this->saveSubtopicSource->handle($subtopic, SourceType::Own, $notes)) {
                 $this->queueMaterialGeneration->handle($subtopic);
             }
 

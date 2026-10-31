@@ -20,6 +20,7 @@ use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
+use App\Http\Controllers\KnowledgeMap\DeleteSubtopicSourceController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
@@ -30,6 +31,9 @@ use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\SuggestSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Materials\DeleteMaterialController;
+use App\Http\Controllers\Materials\ShowMaterialController;
+use App\Http\Controllers\Materials\StoreMaterialController;
 use App\Http\Controllers\Practice\FinishPracticeSessionController;
 use App\Http\Controllers\Practice\ListSubtopicPracticeSessionsController;
 use App\Http\Controllers\Practice\SendPracticeMessageController;
@@ -109,6 +113,13 @@ Route::middleware('auth:sanctum')->prefix('conversations')->name('conversations.
         ->name('save');
 });
 
+// Files attached in the chat (specs/chat-attachments.md).
+Route::middleware('auth:sanctum')->prefix('materials')->name('materials.')->group(function () {
+    Route::post('/', StoreMaterialController::class)->middleware('throttle:upload-materials')->name('store');
+    Route::get('/{material}', ShowMaterialController::class)->whereNumber('material')->name('show');
+    Route::delete('/{material}', DeleteMaterialController::class)->whereNumber('material')->name('destroy');
+});
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/categories', ListCategoriesController::class)->name('categories.index');
 
@@ -137,6 +148,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('throttle:generate-material')
             ->name('update');
         Route::delete('/{subtopic}', DeleteSubtopicController::class)->whereNumber('subtopic')->name('destroy');
+        // A subtopic's sources (specs/subtopic-sources.md).
+        Route::delete('/{subtopic}/sources/{source}', DeleteSubtopicSourceController::class)
+            ->whereNumber(['subtopic', 'source'])
+            ->name('sources.destroy');
         Route::post('/{subtopic}/generate', GenerateMoreMaterialController::class)
             ->whereNumber('subtopic')
             ->middleware('throttle:generate-more-material')
