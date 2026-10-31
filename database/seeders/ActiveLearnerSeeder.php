@@ -120,6 +120,7 @@ class ActiveLearnerSeeder extends Seeder
         Storage::disk('local')->put('materials/seed/photosynthesis-notes.txt', $notes);
 
         $topic->materials()->create([
+            'user_id' => $user->id,
             'original_filename' => 'photosynthesis-notes.txt',
             'storage_path' => 'materials/seed/photosynthesis-notes.txt',
             'mime_type' => 'text/plain',

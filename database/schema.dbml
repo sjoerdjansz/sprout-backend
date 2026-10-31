@@ -266,17 +266,24 @@ Enum generation_status {
 
 Table materials {
   id bigint [pk, increment]
-  topic_id bigint [not null, ref: > topics.id]
+  user_id bigint [not null, ref: > users.id, note: 'Who uploaded it; a file belongs to a learner before it has a topic']
+  topic_id bigint [null, ref: > topics.id, note: 'Null until the conversation it was sent in is saved; then a source of the topic']
+  message_id bigint [null, ref: > messages.id, note: 'The learner\'s message it was sent with; null until sent. Set to null when the conversation is deleted']
   original_filename varchar(255) [not null]
-  storage_path varchar(255) [not null]
-  mime_type varchar(100) [not null]
+  storage_path varchar(255) [not null, note: 'On the private local disk: materials/{user_id}/{uuid}.{extension}']
+  mime_type varchar(100) [not null, note: 'Detected from the contents']
   size_bytes int [not null]
-  extracted_text longtext [null, note: 'Text the tutor uses as source']
+  extracted_text longtext [null, note: 'The text read from the file (at most 60,000 characters); the tutor and card generation use it']
   status material_status [not null, default: 'processing']
+  error varchar(255) [null, note: 'Why reading failed, shown to the learner; null unless failed']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. Uploaded notes and PDFs (MVP). Belongs to a topic; the tutor maps it onto subtopics itself.'
+  indexes {
+    (user_id, created_at)
+  }
+
+  Note: 'BUILT. Files attached in the chat: PDF, Word, Pages, text and Markdown (specs/chat-attachments.md). Read into text in the background; files never sent are pruned after a day.'
 }
 
 Enum material_status {
