@@ -13,4 +13,6 @@ enum AiCallKind: string
     // Feedback on an Explain it explanation (CheckExplanation).
     case ExplainFeedback = 'explain_feedback';
     case CardGeneration = 'card_generation';
+    // Reading a topic's source to suggest subtopics (SuggestSubtopics).
+    case SubtopicSuggestions = 'subtopic_suggestions';
 }

@@ -30,7 +30,8 @@ class TopicRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
-            'notes' => ['nullable', 'string', 'max:10000'],
+            // A topic's notes can be a whole source to split into subtopics (specs/topic-from-source.md).
+            'notes' => ['nullable', 'string', 'max:30000'],
             'category_id' => [
                 'nullable',
                 'required_without:category_name',
@@ -51,7 +52,7 @@ class TopicRequest extends FormRequest
             'title.required' => 'Give your topic a name.',
             'title.max' => 'Keep the topic name under 255 characters.',
             'description.max' => 'Keep the description under 1,000 characters.',
-            'notes.max' => 'Keep your notes under 10,000 characters.',
+            'notes.max' => 'Keep your notes under 30,000 characters.',
             ...CategoryMessages::MESSAGES,
         ];
     }

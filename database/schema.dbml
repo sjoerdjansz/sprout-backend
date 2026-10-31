@@ -228,6 +228,7 @@ Enum ai_call_kind {
   answer_check [note: 'An open answer checked in the retrieval quiz']
   explain_feedback [note: 'An Explain it explanation checked in practice, first or second version']
   card_generation
+  subtopic_suggestions [note: 'A topic\'s source read to suggest the subtopics it falls into']
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +255,7 @@ Table topics {
   category_id bigint [not null, ref: > categories.id, note: 'Cascades like every key, but categories can\'t be deleted on their own yet; when they can, move their topics first']
   title varchar(255) [not null]
   description text [null]
-  notes text [null, note: 'The learner\'s own notes or a source for the topic; nothing is generated from them']
+  notes mediumtext [null, note: 'The learner\'s own notes or a source for the topic, up to 30,000 characters. No cards are made from them; the source can be split into subtopics (specs/topic-from-source.md)']
   goal text [null, note: 'The SMART goal: what the learner wants to know or be able to do. Required when saving from the chat']
   goal_deadline date [null]
   goal_recall_percentage tinyint [null, note: '1-100: the recall the learner wants to reach by the deadline']

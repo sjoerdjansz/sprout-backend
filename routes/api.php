@@ -18,6 +18,7 @@ use App\Http\Controllers\Flashcards\ResumeFlashcardController;
 use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
+use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\KnowledgeMap\ListTopicsController;
 use App\Http\Controllers\KnowledgeMap\ShowSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
+use App\Http\Controllers\KnowledgeMap\SuggestSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
 use App\Http\Controllers\Practice\FinishPracticeSessionController;
@@ -114,6 +116,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', ListTopicsController::class)->name('index');
         Route::post('/', StoreTopicController::class)->name('store');
         Route::put('/{topic}', UpdateTopicController::class)->whereNumber('topic')->name('update');
+        // Building a topic from its source (specs/topic-from-source.md).
+        Route::post('/{topic}/subtopic-suggestions', SuggestSubtopicsController::class)
+            ->whereNumber('topic')
+            ->middleware('throttle:suggest-subtopics')
+            ->name('subtopic-suggestions.store');
+        // One request adds them all, so it counts once against the limit for subtopics with notes.
+        Route::post('/{topic}/subtopics', AddSubtopicsController::class)
+            ->whereNumber('topic')
+            ->middleware('throttle:generate-material')
+            ->name('subtopics.store');
     });
 
     Route::prefix('subtopics')->name('subtopics.')->group(function () {
