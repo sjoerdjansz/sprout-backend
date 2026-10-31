@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\DailyActivity;
 use App\Models\Flashcard;
 use App\Models\FlashcardReview;
+use App\Models\Material;
 use App\Models\Message;
 use App\Models\Question;
 use App\Models\QuestionOption;
@@ -127,6 +128,15 @@ class LearnerExportResource extends JsonResource
                     'technique' => $message->technique?->value,
                     'created_at' => $message->created_at,
                 ]),
+            ]),
+            // The text Sprout read from each uploaded file; the files themselves aren't part of the export.
+            'materials' => $this->materials->map(fn (Material $material): array => [
+                'id' => $material->id,
+                'topic_id' => $material->topic_id,
+                'original_filename' => $material->original_filename,
+                'status' => $material->status->value,
+                'extracted_text' => $material->extracted_text,
+                'created_at' => $material->created_at,
             ]),
             'daily_activity' => $this->dailyActivities->map(fn (DailyActivity $activity): array => [
                 'date' => $activity->activity_date->toDateString(),

@@ -27,6 +27,7 @@ class ExportLearnerData
             'topics.questions.answers' => fn (HasMany $query) => $query->orderBy('answered_at'),
             'studySessions' => fn (HasMany $query) => $query->orderBy('started_at'),
             'studySessions.messages' => fn (HasMany $query) => $query->orderBy('id'),
+            'materials' => fn (HasMany $query) => $query->orderBy('id'),
             'dailyActivities' => fn (HasMany $query) => $query->orderBy('activity_date'),
         ]);
     }

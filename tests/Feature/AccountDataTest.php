@@ -41,6 +41,8 @@ class AccountDataTest extends TestCase
         $learner = $this->learner();
         $topic = $this->topicWithLearningData($learner);
         $this->topicWithLearningData(User::factory()->create());
+        Material::factory()->for($topic)->create(['original_filename' => 'Lecture 1.pdf', 'extracted_text' => 'Cadence is steps per minute.']);
+        Material::factory()->create();
 
         $response = $this->get('/api/v1/user/export');
 
@@ -56,6 +58,10 @@ class AccountDataTest extends TestCase
             ->assertJsonCount(1, 'topics.0.questions.0.answers')
             ->assertJsonCount(1, 'conversations')
             ->assertJsonCount(1, 'conversations.0.messages')
+            ->assertJsonCount(1, 'materials')
+            ->assertJsonPath('materials.0.topic_id', $topic->id)
+            ->assertJsonPath('materials.0.original_filename', 'Lecture 1.pdf')
+            ->assertJsonPath('materials.0.extracted_text', 'Cadence is steps per minute.')
             ->assertJsonCount(1, 'daily_activity');
     }
 
@@ -126,6 +132,8 @@ class AccountDataTest extends TestCase
         $topic = $this->topicWithLearningData($learner);
         $material = Material::factory()->for($topic)->create();
         Storage::disk('local')->put($material->storage_path, 'notes');
+        $unsentMaterial = Material::factory()->unsent()->for($learner)->create();
+        Storage::disk('local')->put($unsentMaterial->storage_path, 'notes');
         $otherLearner = User::factory()->create();
 
         $this->withToken($token)->deleteJson('/api/v1/user', ['email' => ' Ada@Example.com '])->assertNoContent();
@@ -134,6 +142,8 @@ class AccountDataTest extends TestCase
         $this->assertDatabaseCount('personal_access_tokens', 0);
         $this->assertDatabaseMissing('topics', ['id' => $topic->id]);
         Storage::disk('local')->assertMissing($material->storage_path);
+        Storage::disk('local')->assertMissing($unsentMaterial->storage_path);
+        $this->assertModelMissing($unsentMaterial);
         $this->assertModelExists($otherLearner);
     }
 
