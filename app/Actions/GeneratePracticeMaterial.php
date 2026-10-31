@@ -36,6 +36,7 @@ class GeneratePracticeMaterial
         $completion = $this->requestAiCompletion->handle(
             apiKey: $this->resolveAiKey->handle(),
             model: $level->generationModel(),
+            reasoningEffort: $level->generationReasoningEffort(),
             instructions: file_get_contents(resource_path('prompts/practice-material.md')),
             messages: [
                 ['role' => 'user', 'content' => json_encode(['topic' => $topic, 'subtopics' => $subtopics])],

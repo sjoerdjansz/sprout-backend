@@ -75,6 +75,7 @@ class TutorConversationTest extends TestCase
 
             return $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY)
                 && $request['model'] === config('ai.levels.low.chat_model')
+                && $request['reasoning_effort'] === config('ai.levels.low.chat_reasoning_effort')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
                 // The provider never learns who the learner is: no name, only the safety identifier.

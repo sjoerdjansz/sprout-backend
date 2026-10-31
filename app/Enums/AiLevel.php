@@ -27,4 +27,20 @@ enum AiLevel: string
     {
         return config("ai.levels.{$this->value}.generation_model");
     }
+
+    /**
+     * How long the chat model thinks before it answers: less is faster and cheaper.
+     */
+    public function chatReasoningEffort(): string
+    {
+        return config("ai.levels.{$this->value}.chat_reasoning_effort");
+    }
+
+    /**
+     * How long the generation model thinks: more makes the material more accurate, but slower.
+     */
+    public function generationReasoningEffort(): string
+    {
+        return config("ai.levels.{$this->value}.generation_reasoning_effort");
+    }
 }

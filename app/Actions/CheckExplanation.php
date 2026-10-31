@@ -36,6 +36,7 @@ class CheckExplanation
         $completion = $this->requestAiCompletion->handle(
             apiKey: $this->resolveAiKey->handle(),
             model: $level->chatModel(),
+            reasoningEffort: $level->chatReasoningEffort(),
             instructions: file_get_contents(resource_path('prompts/explain-check.md')),
             messages: [
                 ['role' => 'user', 'content' => json_encode([
