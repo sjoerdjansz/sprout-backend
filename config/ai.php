@@ -2,8 +2,7 @@
 
 /*
  * The AI behind the tutor (specs/tutor-chat.md). Learners pick a level, never a model.
- * The key itself is the learner's own (ai_credentials); see config/services.php for the
- * developer's key that is used as a fallback in local development only.
+ * Every call uses Sprout's own key (services.openai.key, see ResolveAiKey).
  */
 return [
 
