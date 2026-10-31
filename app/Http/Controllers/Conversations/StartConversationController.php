@@ -19,9 +19,10 @@ class StartConversationController extends Controller
             learner: $request->user(),
             firstMessage: $request->validated('message'),
             topic: $topicId === null ? null : Topic::findOrFail($topicId),
+            materials: $request->user()->materials()->whereKey($request->validated('material_ids', []))->get(),
         );
 
-        return (new ConversationResource($conversation->load('topic', 'messages')))
+        return (new ConversationResource($conversation->load('topic', 'messages.materials')))
             ->response()
             ->setStatusCode(201);
     }

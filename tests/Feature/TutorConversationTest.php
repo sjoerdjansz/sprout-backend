@@ -7,6 +7,7 @@ use App\Enums\LearnerRole;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
 use App\Models\Flashcard;
+use App\Models\Material;
 use App\Models\Message;
 use App\Models\StudySession;
 use App\Models\Subtopic;
@@ -384,6 +385,102 @@ class TutorConversationTest extends TestCase
         $this->postJson('/api/v1/conversations', ['message' => 'Hi'])
             ->assertTooManyRequests()
             ->assertJsonPath('message', "You're sending messages quickly. Wait a moment and try again.");
+    }
+
+    public function test_files_sent_with_the_first_message_are_read_by_the_tutor_and_shown_with_the_message(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        $lecture = Material::factory()->unsent()->for($learner)->create(['original_filename' => 'Lecture 1.pdf', 'extracted_text' => 'Cadence is steps per minute.']);
+        $syllabus = Material::factory()->unsent()->for($learner)->create(['original_filename' => 'Syllabus.docx', 'extracted_text' => 'Week 1: cadence.']);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $response = $this->postJson('/api/v1/conversations', [
+            'message' => 'Help me learn this',
+            'material_ids' => [$lecture->id, $syllabus->id],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('messages.0.materials.0.id', $lecture->id)
+            ->assertJsonPath('messages.0.materials.0.original_filename', 'Lecture 1.pdf')
+            ->assertJsonPath('messages.0.materials.0.status', 'ready')
+            ->assertJsonPath('messages.0.materials.1.id', $syllabus->id)
+            ->assertJsonCount(0, 'messages.1.materials');
+
+        $userMessage = Message::where('role', MessageRole::User)->sole();
+        $this->assertSame($userMessage->id, $lecture->fresh()->message_id);
+        $this->assertSame($userMessage->id, $syllabus->fresh()->message_id);
+        $this->assertSame('Help me learn this', $userMessage->content);
+        Http::assertSent(fn (Request $request): bool => end($request->data()['messages'])['content'] === "Help me learn this\n\n"
+            ."Attached file \"Lecture 1.pdf\":\n<<<\nCadence is steps per minute.\n>>>\n\n"
+            ."Attached file \"Syllabus.docx\":\n<<<\nWeek 1: cadence.\n>>>");
+    }
+
+    public function test_files_stay_with_their_message_while_it_is_among_the_recent_ones(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        $conversation = $this->openConversation($learner);
+        $earlierMessage = Message::factory()->for($conversation)->create(['role' => MessageRole::User, 'content' => 'My notes']);
+        Material::factory()->unsent()->for($learner)->create(['message_id' => $earlierMessage->id, 'original_filename' => 'notes.md', 'extracted_text' => 'Stride length.']);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/messages", ['message' => 'Quiz me'])
+            ->assertCreated()
+            ->assertJsonPath('messages.0.materials.0.original_filename', 'notes.md');
+
+        Http::assertSent(fn (Request $request): bool => $request['messages'][2]['content'] === "My notes\n\nAttached file \"notes.md\":\n<<<\nStride length.\n>>>"
+            && end($request->data()['messages'])['content'] === 'Quiz me');
+    }
+
+    public function test_only_your_own_read_and_unsent_files_can_be_sent(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        $conversation = $this->openConversation($learner);
+        $processing = Material::factory()->unsent()->processing()->for($learner)->create();
+        $failed = Material::factory()->unsent()->failed()->for($learner)->create();
+        $sent = Material::factory()->unsent()->for($learner)->create(['message_id' => Message::factory()]);
+        $someoneElses = Material::factory()->unsent()->create();
+        $ready = Material::factory()->unsent()->count(6)->for($learner)->create();
+        Sanctum::actingAs($learner);
+        Http::fake();
+
+        $cases = [
+            ['material_ids.0', [$processing->id], 'Wait until your file is ready, then send.'],
+            ['material_ids.0', [$failed->id], "That file couldn't be read. Remove it and try another."],
+            ['material_ids.0', [$sent->id], 'This file is already in a message. Upload it again to send it here.'],
+            ['material_ids.0', [$someoneElses->id], "We couldn't find that file. Upload it again."],
+            ['material_ids.0', ['abc'], "We couldn't find that file. Upload it again."],
+            ['material_ids.1', [$ready[0]->id, $ready[0]->id], 'You attached this file twice. Remove one.'],
+            ['material_ids', $ready->modelKeys(), 'Attach up to 5 files per message.'],
+        ];
+
+        foreach ($cases as [$field, $materialIds, $error]) {
+            $this->postJson("/api/v1/conversations/{$conversation->id}/messages", ['message' => 'Here', 'material_ids' => $materialIds])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors([$field => $error]);
+        }
+
+        // Starting a conversation shares the rules (and the rate limit, so one case is enough here).
+        $this->postJson('/api/v1/conversations', ['message' => 'Here', 'material_ids' => [$processing->id]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['material_ids.0' => 'Wait until your file is ready, then send.']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_when_the_tutor_cant_answer_the_files_stay_unsent(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        $material = Material::factory()->unsent()->for($learner)->create();
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);
+
+        $this->postJson('/api/v1/conversations', ['message' => 'Help me learn this', 'material_ids' => [$material->id]])
+            ->assertServiceUnavailable();
+
+        $this->assertNull($material->fresh()->message_id);
+        $this->assertDatabaseCount('messages', 0);
     }
 
     private function openConversation(User $learner): StudySession

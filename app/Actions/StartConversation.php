@@ -5,10 +5,12 @@ namespace App\Actions;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
 use App\Exceptions\AiRequestFailed;
+use App\Models\Material;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -19,9 +21,11 @@ class StartConversation
     public function __construct(private AskTutor $askTutor) {}
 
     /**
+     * @param  Collection<int, Material>  $materials  the learner's files sent with the first message, read and not sent before
+     *
      * @throws AiRequestFailed
      */
-    public function handle(User $learner, string $firstMessage, ?Topic $topic): StudySession
+    public function handle(User $learner, string $firstMessage, ?Topic $topic, Collection $materials): StudySession
     {
         $topic?->load('category', 'subtopics');
 
@@ -31,9 +35,10 @@ class StartConversation
             draft: $topic === null ? AskTutor::emptyDraft() : $this->draftFromTopic($topic),
             recentMessages: collect(),
             newMessage: $firstMessage,
+            newMaterials: $materials,
         );
 
-        return DB::transaction(function () use ($learner, $firstMessage, $topic, $answer): StudySession {
+        return DB::transaction(function () use ($learner, $firstMessage, $topic, $materials, $answer): StudySession {
             $conversation = $learner->studySessions()->create([
                 'topic_id' => $topic?->id,
                 'kind' => SessionKind::Learn,
@@ -41,15 +46,15 @@ class StartConversation
                 'started_at' => now(),
             ]);
 
-            $conversation->messages()->createMany([
-                ['role' => MessageRole::User, 'content' => $firstMessage],
-                [
-                    'role' => MessageRole::Tutor,
-                    'content' => $answer['reply'],
-                    'model' => $answer['model'],
-                    'input_tokens' => $answer['input_tokens'],
-                    'output_tokens' => $answer['output_tokens'],
-                ],
+            $userMessage = $conversation->messages()->create(['role' => MessageRole::User, 'content' => $firstMessage]);
+            Material::whereKey($materials->modelKeys())->update(['message_id' => $userMessage->id]);
+
+            $conversation->messages()->create([
+                'role' => MessageRole::Tutor,
+                'content' => $answer['reply'],
+                'model' => $answer['model'],
+                'input_tokens' => $answer['input_tokens'],
+                'output_tokens' => $answer['output_tokens'],
             ]);
 
             return $conversation;

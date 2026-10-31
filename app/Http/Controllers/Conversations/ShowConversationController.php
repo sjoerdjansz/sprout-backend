@@ -11,7 +11,7 @@ class ShowConversationController extends Controller
     public function __invoke(Request $request, int $conversation): ConversationResource
     {
         // Looked up among the learner's own conversations, so someone else's is a 404.
-        $conversation = $request->user()->conversations()->with('topic', 'messages')->findOrFail($conversation);
+        $conversation = $request->user()->conversations()->with('topic', 'messages.materials')->findOrFail($conversation);
 
         return new ConversationResource($conversation);
     }

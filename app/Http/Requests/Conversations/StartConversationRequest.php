@@ -25,6 +25,7 @@ class StartConversationRequest extends FormRequest
     {
         return [
             'message' => SendMessageRequest::MESSAGE_RULES,
+            ...SendMessageRequest::materialRules($this->user()),
             'topic_id' => ['sometimes', 'nullable', 'integer', Rule::exists('topics', 'id')->where('user_id', $this->user()->id)],
         ];
     }
