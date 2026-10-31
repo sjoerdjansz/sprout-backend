@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\SourceType;
 use App\Models\Answer;
 use App\Models\Category;
 use App\Models\DailyActivity;
@@ -14,6 +13,7 @@ use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\StudySession;
 use App\Models\Subtopic;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -65,7 +65,12 @@ class LearnerExportResource extends JsonResource
                     'id' => $subtopic->id,
                     'title' => $subtopic->title,
                     'description' => $subtopic->description,
-                    'notes' => $subtopic->sourceContent(SourceType::Own),
+                    // What its cards are made from: the tutor's notes, your own notes and the parts of your files.
+                    'sources' => $subtopic->sources->map(fn (SubtopicSource $source): array => [
+                        'type' => $source->type->value,
+                        'file' => $source->material?->original_filename,
+                        'content' => $source->content,
+                    ]),
                     'position' => $subtopic->position,
                     'mastery' => $subtopic->progress->first()?->mastery,
                     'last_studied_at' => $subtopic->progress->first()?->last_studied_at,

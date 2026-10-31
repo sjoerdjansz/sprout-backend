@@ -20,7 +20,7 @@ class ExportLearnerData
             'topics.category',
             'topics.subtopics' => fn (HasMany $query) => $query->orderBy('position'),
             'topics.subtopics.progress',
-            'topics.subtopics.sources',
+            'topics.subtopics.sources.material',
             'topics.flashcards' => fn (HasMany $query) => $query->orderBy('id'),
             'topics.flashcards.reviews' => fn (HasMany $query) => $query->orderBy('reviewed_at'),
             'topics.questions' => fn (HasMany $query) => $query->orderBy('id'),
