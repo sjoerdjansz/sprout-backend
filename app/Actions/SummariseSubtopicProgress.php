@@ -27,9 +27,6 @@ class SummariseSubtopicProgress
     /** Slipping: the subtopic once reached this, and its expected recall is now below it. */
     public const SLIPPING_THRESHOLD = 65;
 
-    /** SM-2 schedules a card for the moment recall has dropped to about 90%. */
-    private const RECALL_AT_DUE = 0.9;
-
     /**
      * @return array{mastery: int, due_cards: int, next_review_on: ?string, is_new: bool, slipping: bool, facets: array{cards: array{percent: ?int, holding: bool}, explain: array{percent: ?int, holding: bool}, quiz: array{percent: ?int, holding: bool}}}
      */
@@ -123,21 +120,15 @@ class SummariseSubtopicProgress
 
     /**
      * The average chance of remembering the reviewed cards right now, from 0 to 1, or null when no
-     * card has been reviewed yet. Recall decays from 100% at the last review to about 90% when the
-     * card falls due, and on from there.
+     * card has been reviewed yet.
      *
      * @param  Collection<int, Flashcard>  $activeCards
      */
     private function expectedRecall(Collection $activeCards, CarbonImmutable $now): ?float
     {
         $recalls = $activeCards
-            ->filter(fn (Flashcard $flashcard): bool => $flashcard->reviews->isNotEmpty())
-            ->map(function (Flashcard $flashcard) use ($now): float {
-                $lastReviewedAt = $flashcard->reviews->max('reviewed_at');
-                $daysSinceReview = max(0, $lastReviewedAt->diffInSeconds($now)) / 86400;
-
-                return self::RECALL_AT_DUE ** ($daysSinceReview / max(1, $flashcard->interval_days));
-            });
+            ->map(fn (Flashcard $flashcard): ?float => SummariseFlashcard::expectedRecall($flashcard, $now))
+            ->filter(fn (?float $recall): bool => $recall !== null);
 
         return $recalls->isEmpty() ? null : $recalls->avg();
     }

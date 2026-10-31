@@ -7,7 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * A chat with the tutor. The chat history lists these without `messages`.
+ * A chat with the tutor. The chat history lists these without `messages`, but with the number of
+ * messages and a preview of the first few.
  *
  * @mixin StudySession
  */
@@ -32,6 +33,8 @@ class ConversationResource extends JsonResource
             'draft' => $this->draft === null ? null : [...$this->draft, 'category' => $this->draft['category'] ?? null],
             'started_at' => $this->started_at,
             'last_activity_at' => $this->updated_at,
+            'message_count' => $this->whenCounted('messages'),
+            'preview' => MessageResource::collection($this->whenLoaded('previewMessages')),
             'messages' => MessageResource::collection($this->whenLoaded('messages', fn () => $this->messages->sortBy('id')->values())),
         ];
     }

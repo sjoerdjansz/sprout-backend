@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AiLevel;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
+use App\Models\Flashcard;
 use App\Models\Message;
 use App\Models\StudySession;
 use App\Models\Subtopic;
@@ -67,11 +68,12 @@ class TutorConversationTest extends TestCase
 
         $this->postJson('/api/v1/conversations', ['message' => 'Teach me biomechanics'])->assertCreated();
 
-        Http::assertSent(function (Request $request): bool {
+        Http::assertSent(function (Request $request) use ($learner): bool {
             $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
 
             return $request->hasHeader('Authorization', 'Bearer '.self::LEARNER_API_KEY)
                 && $request['model'] === config('ai.levels.low.chat_model')
+                && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
                 && $context['learner']['name'] === 'Ada'
                 && $context['saved_topic'] === null
@@ -109,6 +111,20 @@ class TutorConversationTest extends TestCase
                 && $context['saved_topic']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'mastery_percentage' => 40]]
                 && $context['draft']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']];
         });
+    }
+
+    public function test_the_safety_identifier_tells_learners_apart_without_saying_who_they_are(): void
+    {
+        $learner = User::factory()->create(['email' => 'ada@example.com']);
+        $otherLearner = User::factory()->create();
+
+        $identifier = $learner->aiSafetyIdentifier();
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $identifier);
+        $this->assertSame($identifier, $learner->fresh()->aiSafetyIdentifier());
+        $this->assertNotSame($identifier, $otherLearner->aiSafetyIdentifier());
+        $this->assertNotSame(hash('sha256', (string) $learner->id), $identifier);
+        $this->assertNotSame(hash('sha256', 'ada@example.com'), $identifier);
     }
 
     public function test_a_conversation_cannot_continue_someone_elses_topic(): void
@@ -307,6 +323,49 @@ class TutorConversationTest extends TestCase
             ->assertJsonPath('1.topic.title', 'Photosynthesis')
             ->assertJsonPath('1.is_saved', true)
             ->assertJsonMissingPath('0.messages');
+    }
+
+    public function test_the_conversations_about_one_topic_come_with_a_message_count_and_a_preview(): void
+    {
+        $learner = $this->learnerWithKey();
+        $topic = Topic::factory()->for($learner)->create();
+        $conversation = StudySession::factory()->for($learner)->for($topic)->create();
+        $messages = Message::factory()->for($conversation)->count(4)->create();
+        StudySession::factory()->for($learner)->for($topic)->create(['kind' => SessionKind::Review]);
+        StudySession::factory()->for($learner)->create();
+        Sanctum::actingAs($learner);
+
+        $this->getJson("/api/v1/conversations?topic_id={$topic->id}")
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $conversation->id)
+            ->assertJsonPath('0.message_count', 4)
+            ->assertJsonCount(3, '0.preview')
+            ->assertJsonPath('0.preview.0.id', $messages[0]->id)
+            ->assertJsonPath('0.preview.2.id', $messages[2]->id);
+
+        $this->getJson('/api/v1/conversations?topic_id='.Topic::factory()->create()->id)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['topic_id' => "We couldn't find that topic. Pick one from your knowledge map."]);
+    }
+
+    public function test_deleting_a_conversation_keeps_the_cards_made_from_it(): void
+    {
+        $learner = $this->learnerWithKey();
+        $topic = Topic::factory()->for($learner)->create();
+        $conversation = StudySession::factory()->for($learner)->for($topic)->create();
+        $message = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor]);
+        $flashcard = Flashcard::factory()->for($learner)->for($topic)->create(['source_message_id' => $message->id]);
+        $someoneElses = $this->openConversation(User::factory()->create());
+        Sanctum::actingAs($learner);
+
+        $this->deleteJson("/api/v1/conversations/{$conversation->id}")->assertNoContent();
+        $this->deleteJson("/api/v1/conversations/{$someoneElses->id}")->assertNotFound();
+
+        $this->assertModelMissing($conversation);
+        $this->assertModelMissing($message);
+        $this->assertNull($flashcard->fresh()->source_message_id);
+        $this->assertModelExists($someoneElses);
     }
 
     public function test_opening_a_conversation_shows_its_messages_in_order(): void

@@ -68,6 +68,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasManyThrough<Question, Topic, $this>
+     */
+    public function questions(): HasManyThrough
+    {
+        return $this->hasManyThrough(Question::class, Topic::class);
+    }
+
+    /**
      * @return HasMany<StudySession, $this>
      */
     public function studySessions(): HasMany
@@ -135,5 +143,15 @@ class User extends Authenticatable
     public function timezone(): string
     {
         return $this->settings?->timezone ?? 'UTC';
+    }
+
+    /**
+     * Sent with every AI request, so the provider can tell learners apart when it flags misuse; that
+     * matters once requests share one business key. Keyed with the app key, because a plain hash of an
+     * incrementing id is easy to reverse: the provider must never learn who the learner is.
+     */
+    public function aiSafetyIdentifier(): string
+    {
+        return hash_hmac('sha256', 'user:'.$this->id, config('app.key'));
     }
 }

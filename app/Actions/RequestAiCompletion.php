@@ -19,6 +19,7 @@ class RequestAiCompletion
     /**
      * @param  array<int, array{role: string, content: string}>  $messages  the conversation after the instructions
      * @param  array<string, mixed>  $schema  JSON Schema the answer must follow (strict mode)
+     * @param  string  $safetyIdentifier  the learner's User::aiSafetyIdentifier()
      * @return array{content: array<string, mixed>, model: string, input_tokens: int, output_tokens: int}
      *
      * @throws AiRequestFailed when the key doesn't work or no usable answer came back.
@@ -32,6 +33,7 @@ class RequestAiCompletion
         array $schema,
         int $maxCompletionTokens,
         int $timeoutSeconds,
+        string $safetyIdentifier,
     ): array {
         try {
             $response = Http::withToken($apiKey)
@@ -48,6 +50,7 @@ class RequestAiCompletion
                         'type' => 'json_schema',
                         'json_schema' => ['name' => $schemaName, 'strict' => true, 'schema' => $schema],
                     ],
+                    'safety_identifier' => $safetyIdentifier,
                 ]);
         } catch (ConnectionException $exception) {
             Log::warning('The AI provider could not be reached.', ['model' => $model, 'error' => $exception->getMessage()]);

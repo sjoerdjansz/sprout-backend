@@ -25,6 +25,10 @@
 // - Every topic is in exactly one category. Categories belong to a learner: six starters at sign up plus their own.
 // - Facet progress (flashcards, explain, quiz), "holding" and "slipping" are worked out from the raw events when
 //   the knowledge map is read, not stored. subtopic_progress keeps the highest mastery reached for "slipping".
+//
+// Decisions (2026-10-30, specs/subtopic-page.md):
+// - No new tables. Pausing a card sets flashcards.suspended_at. Deleting a subtopic, card, question or
+//   conversation from the subtopic page removes the row for good (the keys cascade); undo lives in the frontend.
 
 Project sprout {
   database_type: 'MySQL'
@@ -258,7 +262,7 @@ Table flashcards {
   ease_factor decimal(4,2) [not null, default: 2.5]
   repetitions int [not null, default: 0]
   lapses int [not null, default: 0]
-  suspended_at timestamp [null]
+  suspended_at timestamp [null, note: 'Paused: never due, and left out of due counts, recall and slipping']
   created_at timestamp
   updated_at timestamp
 

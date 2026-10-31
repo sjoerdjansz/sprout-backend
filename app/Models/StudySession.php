@@ -44,6 +44,16 @@ class StudySession extends Model
         return $this->hasMany(Message::class);
     }
 
+    /**
+     * The first few messages, so a list of conversations can show how each one started.
+     *
+     * @return HasMany<Message, $this>
+     */
+    public function previewMessages(): HasMany
+    {
+        return $this->messages()->orderBy('id')->limit(3);
+    }
+
     public function isSaved(): bool
     {
         return $this->ended_at !== null;
