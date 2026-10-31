@@ -12,15 +12,18 @@ use App\Http\Controllers\Conversations\ShowConversationController;
 use App\Http\Controllers\Conversations\StartConversationController;
 use App\Http\Controllers\CurrentUserController;
 use App\Http\Controllers\Flashcards\DeleteFlashcardController;
+use App\Http\Controllers\Flashcards\ListDueFlashcardsController;
 use App\Http\Controllers\Flashcards\ListFlashcardsController;
 use App\Http\Controllers\Flashcards\PauseFlashcardController;
 use App\Http\Controllers\Flashcards\ResumeFlashcardController;
 use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
+use App\Http\Controllers\Insights\ShowWeeklyInsightsController;
 use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicSourceController;
+use App\Http\Controllers\KnowledgeMap\DeleteTopicController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
@@ -122,11 +125,14 @@ Route::middleware('auth:sanctum')->prefix('materials')->name('materials.')->grou
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/categories', ListCategoriesController::class)->name('categories.index');
+    // The dashboard's "This week" row (specs/weekly-insights.md).
+    Route::get('/insights/week', ShowWeeklyInsightsController::class)->name('insights.week');
 
     Route::prefix('topics')->name('topics.')->group(function () {
         Route::get('/', ListTopicsController::class)->name('index');
         Route::post('/', StoreTopicController::class)->name('store');
         Route::put('/{topic}', UpdateTopicController::class)->whereNumber('topic')->name('update');
+        Route::delete('/{topic}', DeleteTopicController::class)->whereNumber('topic')->name('destroy');
         // Building a topic from its source (specs/topic-from-source.md).
         Route::post('/{topic}/subtopic-suggestions', SuggestSubtopicsController::class)
             ->whereNumber('topic')
@@ -168,6 +174,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('flashcards')->name('flashcards.')->group(function () {
+        // The queue for a review of everything due today, across topics (specs/practice-session.md).
+        Route::get('/due', ListDueFlashcardsController::class)->name('due');
         Route::put('/{flashcard}', UpdateFlashcardController::class)->whereNumber('flashcard')->name('update');
         Route::delete('/{flashcard}', DeleteFlashcardController::class)->whereNumber('flashcard')->name('destroy');
         Route::post('/{flashcard}/pause', PauseFlashcardController::class)->whereNumber('flashcard')->name('pause');

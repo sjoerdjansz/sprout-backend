@@ -70,6 +70,7 @@ class PracticeSessionsTest extends TestCase
             'explain_subtopic_id' => $this->water->id,
         ])
             ->assertCreated()
+            ->assertJsonPath('scope', 'topic')
             ->assertJsonPath('topic', ['id' => $this->topic->id, 'title' => 'Photosynthesis'])
             ->assertJsonPath('subtopic', null)
             ->assertJsonPath('plan', [
@@ -98,9 +99,11 @@ class PracticeSessionsTest extends TestCase
         $this->postJson('/api/v1/practice-sessions', $this->plan(['subtopic_id' => $this->light->id, 'modes' => ['open']]))
             ->assertCreated()
             ->assertJsonPath('subtopic', ['id' => $this->light->id, 'title' => 'Light'])
+            ->assertJsonPath('scope', 'subtopic')
             ->assertJsonPath('subtopics', [[
                 'id' => $this->light->id,
                 'title' => 'Light',
+                'topic' => ['id' => $this->topic->id, 'title' => 'Photosynthesis'],
                 'mastery_before' => 40,
                 'mastery_after' => 40,
                 'next_review_on' => null,

@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Starts a practice session on a topic or one of its subtopics, with the plan the learner picked: the
+ * Starts a practice session on a topic, one of its subtopics or everything due today across topics (no
+ * topic: a "due review", flashcards only), with the plan the learner picked: the
  * modes and the cards and questions the frontend put in its blocks, so a reload can resume it. A session
  * that was still open is finished first: there is one session at a time. The mastery of the scope's
  * subtopics is kept for "before and after".
@@ -26,6 +27,7 @@ class StartPracticeSession
     ) {}
 
     /**
+     * @param  ?Topic  $topic  null for a review of everything due today, across topics
      * @param  array<int, PracticeMode>  $modes
      * @param  array<int, int>  $cardIds  in the order the flashcard block shows them
      * @param  array<int, int>  $questionIds  in the order the quiz shows them
@@ -33,9 +35,13 @@ class StartPracticeSession
      *
      * @throws ValidationException when the plan holds something outside the scope.
      */
-    public function handle(User $learner, Topic $topic, ?Subtopic $subtopic, array $modes, array $cardIds, array $questionIds, ?Subtopic $explainSubtopic): array
+    public function handle(User $learner, ?Topic $topic, ?Subtopic $subtopic, array $modes, array $cardIds, array $questionIds, ?Subtopic $explainSubtopic): array
     {
-        $this->ensurePlanFitsScope($topic, $subtopic, $cardIds, $questionIds, $explainSubtopic);
+        if ($topic === null) {
+            $this->ensurePlanFitsDueReview($learner, $modes, $cardIds, $questionIds, $explainSubtopic);
+        } else {
+            $this->ensurePlanFitsScope($topic, $subtopic, $cardIds, $questionIds, $explainSubtopic);
+        }
 
         $session = DB::transaction(function () use ($learner, $topic, $subtopic, $modes, $cardIds, $questionIds, $explainSubtopic) {
             $learner->practiceSessions()->whereNull('ended_at')->get()
@@ -43,7 +49,7 @@ class StartPracticeSession
 
             $session = $learner->practiceSessions()->create([
                 'kind' => SessionKind::Review,
-                'topic_id' => $topic->id,
+                'topic_id' => $topic?->id,
                 'subtopic_id' => $subtopic?->id,
                 'plan' => [
                     'modes' => array_map(fn (PracticeMode $mode): string => $mode->value, $modes),
@@ -59,6 +65,43 @@ class StartPracticeSession
         });
 
         return $this->summarisePracticeSession->handle($session, $learner);
+    }
+
+    /**
+     * Only flashcards have a schedule, so only they can be due; Explain it and the open session need one
+     * subject, which a mix of topics doesn't have. The cards may come from any of the learner's topics.
+     *
+     * @param  array<int, PracticeMode>  $modes
+     * @param  array<int, int>  $cardIds
+     * @param  array<int, int>  $questionIds
+     *
+     * @throws ValidationException
+     */
+    private function ensurePlanFitsDueReview(User $learner, array $modes, array $cardIds, array $questionIds, ?Subtopic $explainSubtopic): void
+    {
+        $errors = [];
+
+        if ($modes !== [PracticeMode::Cards]) {
+            $errors['modes'] = 'A review of everything due is flashcards only.';
+        }
+
+        if ($cardIds === []) {
+            $errors['card_ids'] = 'Nothing is due today, so there is nothing to review.';
+        } elseif ($learner->flashcards()->whereIn('id', $cardIds)->count() !== count($cardIds)) {
+            $errors['card_ids'] = 'Pick cards from what you\'re practising.';
+        }
+
+        if ($questionIds !== []) {
+            $errors['question_ids'] = 'A review of everything due has no quiz questions.';
+        }
+
+        if ($explainSubtopic !== null) {
+            $errors['explain_subtopic_id'] = 'A review of everything due has nothing to explain.';
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     /**

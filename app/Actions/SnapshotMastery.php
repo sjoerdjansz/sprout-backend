@@ -2,13 +2,15 @@
 
 namespace App\Actions;
 
+use App\Models\Flashcard;
 use App\Models\StudySession;
 use App\Models\SubtopicProgress;
 use App\Models\User;
 
 /**
- * The stored mastery of every subtopic a practice session covers, keyed by subtopic id: its subtopic, or
- * all subtopics of its topic. A subtopic that was never practised is at 0.
+ * The stored mastery of every subtopic a practice session covers, keyed by subtopic id: its subtopic, all
+ * subtopics of its topic, or for a review of everything due the subtopics of the cards in its plan. A
+ * subtopic that was never practised is at 0.
  */
 class SnapshotMastery
 {
@@ -17,9 +19,17 @@ class SnapshotMastery
      */
     public function handle(StudySession $session, User $learner): array
     {
-        $subtopicIds = $session->subtopic_id !== null
-            ? [$session->subtopic_id]
-            : $session->topic->subtopics()->pluck('id')->all();
+        $subtopicIds = match ($session->practiceScope()) {
+            StudySession::SCOPE_SUBTOPIC => [$session->subtopic_id],
+            StudySession::SCOPE_TOPIC => $session->topic->subtopics()->pluck('id')->all(),
+            // Every subtopic of every topic would be most of the library; these are the ones it practises.
+            StudySession::SCOPE_DUE => Flashcard::query()
+                ->whereIn('id', $session->plan['card_ids'])
+                ->whereNotNull('subtopic_id')
+                ->distinct()
+                ->pluck('subtopic_id')
+                ->all(),
+        };
 
         $masteryPerSubtopic = SubtopicProgress::query()
             ->where('user_id', $learner->id)

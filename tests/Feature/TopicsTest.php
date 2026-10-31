@@ -2,11 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Enums\SessionKind;
+use App\Models\Answer;
 use App\Models\Category;
+use App\Models\DailyActivity;
+use App\Models\Flashcard;
+use App\Models\FlashcardReview;
+use App\Models\Material;
+use App\Models\Message;
+use App\Models\Question;
+use App\Models\StudySession;
 use App\Models\Subtopic;
+use App\Models\SubtopicProgress;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -131,5 +142,63 @@ class TopicsTest extends TestCase
     {
         $this->postJson('/api/v1/topics', ['title' => 'Astronomy'])->assertUnauthorized();
         $this->putJson('/api/v1/topics/1', ['title' => 'Astronomy'])->assertUnauthorized();
+        $this->deleteJson('/api/v1/topics/1')->assertUnauthorized();
+    }
+
+    public function test_deleting_a_topic_removes_everything_in_it_and_about_it(): void
+    {
+        Storage::fake('local');
+        $learner = User::factory()->create();
+        $topic = Topic::factory()->for($learner)->create();
+        $subtopic = Subtopic::factory()->for($topic)->create();
+        $flashcard = Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create();
+        $question = Question::factory()->for($topic)->for($subtopic)->create();
+        $practiceSession = StudySession::factory()->for($learner)->for($topic)->create(['kind' => SessionKind::Review]);
+        FlashcardReview::factory()->for($flashcard)->for($practiceSession)->create();
+        Answer::factory()->for($question)->for($learner)->for($practiceSession)->create();
+        SubtopicProgress::factory()->for($learner)->for($subtopic)->create();
+        $conversation = StudySession::factory()->for($learner)->for($topic)->create();
+        $message = Message::factory()->for($conversation)->create();
+        $savedFile = Material::factory()->for($topic)->create(['message_id' => $message->id]);
+        $unsavedConversation = StudySession::factory()->for($learner)->for($topic)->create(['ended_at' => null]);
+        $fileInUnsavedConversation = Material::factory()->unsent()->create([
+            'user_id' => $learner->id,
+            'message_id' => Message::factory()->for($unsavedConversation)->create()->id,
+        ]);
+        Storage::disk('local')->put($savedFile->storage_path, 'pdf');
+        Storage::disk('local')->put($fileInUnsavedConversation->storage_path, 'pdf');
+        $practisedToday = DailyActivity::factory()->for($learner)->create();
+        $otherTopic = Topic::factory()->for($learner)->create();
+        $otherFlashcard = Flashcard::factory()->for($learner)->for($otherTopic)->create();
+        $otherConversation = StudySession::factory()->for($learner)->for($otherTopic)->create();
+        Sanctum::actingAs($learner);
+
+        $this->deleteJson("/api/v1/topics/{$topic->id}")->assertNoContent();
+
+        foreach ([$topic, $subtopic, $flashcard, $question, $practiceSession, $conversation, $message, $unsavedConversation, $savedFile, $fileInUnsavedConversation] as $model) {
+            $this->assertModelMissing($model);
+        }
+        $this->assertDatabaseCount('flashcard_reviews', 0);
+        $this->assertDatabaseCount('answers', 0);
+        $this->assertDatabaseCount('subtopic_progress', 0);
+        Storage::disk('local')->assertMissing([$savedFile->storage_path, $fileInUnsavedConversation->storage_path]);
+        // The days practised are a record of effort, not of the topic: the streak and XP stay.
+        $this->assertModelExists($practisedToday);
+        $this->assertModelExists($otherTopic);
+        $this->assertModelExists($otherFlashcard);
+        $this->assertModelExists($otherConversation);
+    }
+
+    public function test_someone_elses_topic_cannot_be_deleted(): void
+    {
+        $someoneElses = Topic::factory()->create();
+        Subtopic::factory()->for($someoneElses)->create();
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->deleteJson("/api/v1/topics/{$someoneElses->id}")->assertNotFound();
+        $this->deleteJson('/api/v1/topics/999')->assertNotFound();
+
+        $this->assertModelExists($someoneElses);
+        $this->assertDatabaseCount('subtopics', 1);
     }
 }

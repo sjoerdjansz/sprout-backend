@@ -12,14 +12,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A learn session ("conversation" in the API) explores a topic with the tutor: it has no topic until it is
- * saved, and is read-only after that. A review session is a practice session on a topic or one of its
- * subtopics: its card reviews, answers and messages point to it.
+ * saved, and is read-only after that. A review session is a practice session on a topic, one of its
+ * subtopics or everything due today across topics (no topic): its card reviews, answers and messages
+ * point to it.
  */
 #[Fillable(['user_id', 'topic_id', 'subtopic_id', 'kind', 'draft', 'plan', 'mastery_before', 'mastery_after', 'started_at', 'ended_at'])]
 class StudySession extends Model
 {
     /** @use HasFactory<StudySessionFactory> */
     use HasFactory;
+
+    /** What a practice session covers, see practiceScope(). */
+    public const SCOPE_TOPIC = 'topic';
+
+    public const SCOPE_SUBTOPIC = 'subtopic';
+
+    public const SCOPE_DUE = 'due';
 
     /**
      * @return BelongsTo<User, $this>
@@ -82,6 +90,19 @@ class StudySession extends Model
     public function isSaved(): bool
     {
         return $this->ended_at !== null;
+    }
+
+    /**
+     * What a practice session covers: one subtopic, a whole topic, or everything due today across topics
+     * (a review session without a topic).
+     */
+    public function practiceScope(): string
+    {
+        if ($this->subtopic_id !== null) {
+            return self::SCOPE_SUBTOPIC;
+        }
+
+        return $this->topic_id !== null ? self::SCOPE_TOPIC : self::SCOPE_DUE;
     }
 
     /**

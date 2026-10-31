@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Actions\CalculateStreak;
 use App\Enums\AvatarColor;
 use App\Enums\Interest;
 use App\Models\User;
@@ -20,6 +21,9 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // The dashboard and the sidebar show the streak on every page, and the user is what the app loads first.
+        $streak = app(CalculateStreak::class)->handle($this->resource);
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -31,6 +35,8 @@ class UserResource extends JsonResource
             // Sign up preferences live in user_settings; the response shape stays as documented in API.md.
             'interests' => $this->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
             'wants_daily_reminder' => $this->settings?->wants_daily_reminder ?? false,
+            'streak_days' => $streak['current_days'],
+            'best_streak_days' => $streak['best_days'],
             'created_at' => $this->created_at,
         ];
     }
