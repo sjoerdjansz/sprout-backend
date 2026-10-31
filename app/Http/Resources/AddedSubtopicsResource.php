@@ -8,9 +8,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * The result of adding several subtopics to a topic: the new subtopics as the knowledge map shows them,
- * and what was made for them.
+ * and how many there are. Their flashcards and questions are made in the background.
  *
- * @property array{subtopics: array<int, array{subtopic: Subtopic, progress: array<string, mixed>}>, added_flashcards: int, added_questions: int} $resource
+ * @property array<int, array{subtopic: Subtopic, progress: array<string, mixed>}> $resource
  */
 class AddedSubtopicsResource extends JsonResource
 {
@@ -22,11 +22,9 @@ class AddedSubtopicsResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'subtopics' => KnowledgeMapSubtopicResource::collection($this->resource['subtopics']),
+            'subtopics' => KnowledgeMapSubtopicResource::collection($this->resource),
             'added' => [
-                'subtopics' => count($this->resource['subtopics']),
-                'flashcards' => $this->resource['added_flashcards'],
-                'questions' => $this->resource['added_questions'],
+                'subtopics' => count($this->resource),
             ],
         ];
     }

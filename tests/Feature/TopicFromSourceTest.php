@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Enums\AiCallKind;
+use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
@@ -155,16 +157,14 @@ class TopicFromSourceTest extends TestCase
             ->assertJsonPath('message', "You've asked for suggestions a few times in a row. Wait a minute and try again.");
     }
 
-    public function test_kept_subtopics_are_added_at_the_end_with_material_from_their_notes_in_one_call(): void
+    public function test_kept_subtopics_are_added_at_the_end_and_those_with_notes_get_material_in_the_background(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Coach better']);
         Subtopic::factory()->for($topic)->create(['position' => 3]);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [
-            $this->material('Cadence', flashcards: 2),
-            $this->material('Stride length', flashcards: 3),
-        ]])]);
+        Http::fake();
 
         $response = $this->postJson("/api/v1/topics/{$topic->id}/subtopics", ['subtopics' => [
             ['title' => 'Cadence', 'description' => 'Steps per minute.', 'notes' => 'Most runners land around 170 to 180 steps per minute.'],
@@ -178,44 +178,36 @@ class TopicFromSourceTest extends TestCase
             ->assertJsonPath('subtopics.0.title', 'Cadence')
             ->assertJsonPath('subtopics.0.description', 'Steps per minute.')
             ->assertJsonPath('subtopics.0.notes', 'Most runners land around 170 to 180 steps per minute.')
-            ->assertJsonPath('subtopics.0.due_cards', 2)
+            ->assertJsonPath('subtopics.0.generation_status', 'generating')
             ->assertJsonPath('subtopics.0.is_new', true)
             ->assertJsonPath('subtopics.1.title', 'Warming up')
             ->assertJsonPath('subtopics.1.notes', null)
-            ->assertJsonPath('subtopics.1.due_cards', 0)
+            ->assertJsonPath('subtopics.1.generation_status', 'ready')
             ->assertJsonPath('subtopics.2.title', 'Stride length')
-            ->assertJsonPath('subtopics.2.due_cards', 3)
-            ->assertJsonPath('added', ['subtopics' => 3, 'flashcards' => 5, 'questions' => 2]);
+            ->assertJsonPath('subtopics.2.generation_status', 'generating')
+            ->assertJsonPath('added', ['subtopics' => 3]);
 
         $this->assertSame(
             ['Cadence' => 4, 'Warming up' => 5, 'Stride length' => 6],
             $topic->subtopics()->where('position', '>', 3)->orderBy('position')->pluck('position', 'title')->all(),
         );
-        $this->assertSame(3, Subtopic::where('title', 'Stride length')->sole()->flashcards()->where('user_id', $learner->id)->count());
-        Http::assertSentCount(1);
-        Http::assertSent(function (Request $request): bool {
-            $input = json_decode($request['messages'][1]['content'], true);
-
-            return $input['topic'] === ['title' => 'Running', 'goal' => 'Coach better']
-                && $input['subtopics'] === [
-                    ['title' => 'Cadence', 'content' => 'Most runners land around 170 to 180 steps per minute.', 'existing_items' => []],
-                    ['title' => 'Stride length', 'content' => 'How far each step goes.', 'existing_items' => []],
-                ];
-        });
+        Http::assertNothingSent();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 2);
+        Queue::assertNotPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->title === 'Warming up');
     }
 
-    public function test_subtopics_without_notes_are_added_without_an_ai_call(): void
+    public function test_subtopics_without_notes_are_added_without_a_job(): void
     {
+        Queue::fake();
         $learner = User::factory()->create();
         $topic = Topic::factory()->for($learner)->create();
         Sanctum::actingAs($learner);
-        Http::fake();
 
         $this->postJson("/api/v1/topics/{$topic->id}/subtopics", ['subtopics' => [['title' => 'Cadence'], ['title' => 'Stride length']]])
             ->assertCreated()
-            ->assertJsonPath('added', ['subtopics' => 2, 'flashcards' => 0, 'questions' => 0]);
+            ->assertJsonPath('added', ['subtopics' => 2]);
 
-        Http::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_added_subtopics_are_validated_and_must_fit_in_the_topic(): void
@@ -267,48 +259,11 @@ class TopicFromSourceTest extends TestCase
         $this->assertDatabaseCount('subtopics', 0);
     }
 
-    public function test_nothing_is_added_when_generating_fails(): void
-    {
-        $learner = $this->learnerWithAiConfigured();
-        $topic = Topic::factory()->for($learner)->create();
-        Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);
-
-        $this->postJson("/api/v1/topics/{$topic->id}/subtopics", ['subtopics' => [
-            ['title' => 'Warming up'],
-            ['title' => 'Cadence', 'notes' => 'Steps per minute.'],
-        ]])
-            ->assertServiceUnavailable()
-            ->assertJsonPath('message', "The tutor can't answer right now. Try again in a moment.");
-
-        $this->assertDatabaseCount('subtopics', 0);
-        $this->assertDatabaseCount('flashcards', 0);
-    }
-
     /**
      * @return array{title: string, description: string, notes: string}
      */
     private function suggestion(string $title, string $notes = 'Some notes.'): array
     {
         return ['title' => $title, 'description' => "What {$title} covers.", 'notes' => $notes];
-    }
-
-    /**
-     * Generated material for one subtopic, as the AI returns it: flashcards and one open question.
-     *
-     * @return array<string, mixed>
-     */
-    private function material(string $title, int $flashcards): array
-    {
-        return [
-            'title' => $title,
-            'flashcards' => array_map(fn (int $number): array => [
-                'front' => "Question {$number} about {$title}?",
-                'back' => "Answer {$number}.",
-            ], range(1, $flashcards)),
-            'questions' => [
-                ['type' => 'open', 'prompt' => "Explain {$title}.", 'model_answer' => 'A good answer.', 'options' => []],
-            ],
-        ];
     }
 }
