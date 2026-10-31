@@ -2,30 +2,30 @@
 
 namespace App\Actions;
 
-use App\Exceptions\AiRequestFailed;
+use App\Enums\GenerationStatus;
 use App\Models\Subtopic;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
  * "Generate from sources" on the subtopic page: more flashcards and questions from the subtopic's
- * notes, its only source for now. The existing cards and questions are passed along, so the AI adds
- * what they don't cover yet instead of repeating them.
+ * notes, its only source for now, made in the background (specs/background-generation.md). The job
+ * passes the existing cards and questions along, so the AI adds what they don't cover yet. This is
+ * also how a subtopic whose generation failed is tried again.
  */
 class GenerateMoreMaterial
 {
+    public const STILL_GENERATING_MESSAGE = "Sprout is still making cards for this subtopic. They'll show up in a moment.";
+
     public function __construct(
-        private GeneratePracticeMaterial $generatePracticeMaterial,
-        private StorePracticeMaterial $storePracticeMaterial,
+        private QueueMaterialGeneration $queueMaterialGeneration,
         private SummariseSubtopicProgress $summariseSubtopicProgress,
     ) {}
 
     /**
-     * @return array{subtopic: Subtopic, progress: array<string, mixed>, added_flashcards: int, added_questions: int}
+     * @return array{subtopic: Subtopic, progress: array<string, mixed>}
      *
-     * @throws ValidationException when the subtopic has no notes to generate from.
-     * @throws AiRequestFailed
+     * @throws ValidationException when the subtopic has no notes to generate from, or is still generating.
      */
     public function handle(Subtopic $subtopic, User $learner): array
     {
@@ -35,32 +35,18 @@ class GenerateMoreMaterial
             ]);
         }
 
-        $topic = $subtopic->topic;
+        // A double click shouldn't make everything twice; the running job already covers the notes.
+        if ($subtopic->generation_status === GenerationStatus::Generating) {
+            throw ValidationException::withMessages(['subtopic' => self::STILL_GENERATING_MESSAGE]);
+        }
 
-        $material = $this->generatePracticeMaterial->handle(
-            learner: $learner,
-            topic: ['title' => $topic->title, 'goal' => $topic->goal ?? ''],
-            subtopics: [[
-                'title' => $subtopic->title,
-                'content' => $subtopic->content,
-                'existing_items' => [
-                    ...$subtopic->flashcards()->pluck('front'),
-                    ...$subtopic->questions()->pluck('prompt'),
-                ],
-            ]],
-        )[0];
-
-        $added = DB::transaction(
-            fn (): array => $this->storePracticeMaterial->handle($subtopic, $learner->id, $material, sourceMessageId: null),
-        );
+        $this->queueMaterialGeneration->handle($subtopic);
 
         $subtopic->load(SummariseSubtopicProgress::relations($learner));
 
         return [
             'subtopic' => $subtopic,
             'progress' => $this->summariseSubtopicProgress->handle($subtopic, $learner->timezone()),
-            'added_flashcards' => $added['flashcards'],
-            'added_questions' => $added['questions'],
         ];
     }
 }

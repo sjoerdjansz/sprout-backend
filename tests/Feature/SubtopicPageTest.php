@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Enums\AiCallKind;
+use App\Enums\GenerationStatus;
 use App\Enums\SessionKind;
+use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Answer;
 use App\Models\Category;
 use App\Models\Flashcard;
@@ -15,8 +16,8 @@ use App\Models\SubtopicProgress;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
@@ -105,38 +106,21 @@ class SubtopicPageTest extends TestCase
         $this->assertModelExists($topic);
     }
 
-    public function test_generating_adds_what_the_existing_cards_and_questions_dont_cover_yet(): void
+    public function test_generating_queues_more_material_from_the_notes(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
-        $topic = Topic::factory()->for($learner)->create(['title' => 'Biology', 'goal' => 'Pass the exam']);
-        $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Photosynthesis', 'content' => 'Light, water and CO2 become sugar.']);
-        Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['front' => 'What does a plant need?']);
-        Question::factory()->for($topic)->for($subtopic)->create(['prompt' => 'Explain photosynthesis.']);
+        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => 'Light, water and CO2 become sugar.']);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [[
-            'title' => 'Photosynthesis',
-            'flashcards' => [['front' => 'What is made?', 'back' => 'Sugar.'], ['front' => 'What is released?', 'back' => 'Oxygen.']],
-            'questions' => [['type' => 'open', 'prompt' => 'Why is light needed?', 'model_answer' => 'Energy.', 'options' => []]],
-        ]]])]);
+        Http::fake();
 
         $this->postJson("/api/v1/subtopics/{$subtopic->id}/generate")
-            ->assertOk()
+            ->assertAccepted()
             ->assertJsonPath('subtopic.id', $subtopic->id)
-            ->assertJsonPath('subtopic.due_cards', 3);
+            ->assertJsonPath('subtopic.generation_status', 'generating');
 
-        $this->assertSame(3, $subtopic->flashcards()->where('user_id', $learner->id)->count());
-        $this->assertSame(2, $subtopic->questions()->count());
-        $this->assertSame(AiCallKind::CardGeneration, $learner->aiCalls()->sole()->kind);
-        Http::assertSent(function (Request $request): bool {
-            $input = json_decode($request['messages'][1]['content'], true);
-
-            return $input['topic'] === ['title' => 'Biology', 'goal' => 'Pass the exam']
-                && $input['subtopics'] === [[
-                    'title' => 'Photosynthesis',
-                    'content' => 'Light, water and CO2 become sugar.',
-                    'existing_items' => ['What does a plant need?', 'Explain photosynthesis.'],
-                ]];
-        });
+        Http::assertNothingSent();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($subtopic));
     }
 
     public function test_generating_needs_notes_to_generate_from(): void
@@ -153,17 +137,24 @@ class SubtopicPageTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_nothing_is_added_when_generating_fails(): void
+    public function test_a_failed_subtopic_can_be_tried_again_but_one_still_generating_cannot(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
-        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => 'Notes.']);
+        $topic = Topic::factory()->for($learner)->create();
+        $failed = Subtopic::factory()->for($topic)->create(['content' => 'Notes.', 'generation_status' => GenerationStatus::Failed]);
+        $generating = Subtopic::factory()->for($topic)->create(['content' => 'Notes.', 'generation_status' => GenerationStatus::Generating]);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);
 
-        $this->postJson("/api/v1/subtopics/{$subtopic->id}/generate")->assertServiceUnavailable();
+        $this->postJson("/api/v1/subtopics/{$failed->id}/generate")
+            ->assertAccepted()
+            ->assertJsonPath('subtopic.generation_status', 'generating');
 
-        $this->assertDatabaseCount('flashcards', 0);
-        $this->assertDatabaseCount('questions', 0);
+        $this->postJson("/api/v1/subtopics/{$generating->id}/generate")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['subtopic' => "Sprout is still making cards for this subtopic. They'll show up in a moment."]);
+
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
     }
 
     public function test_generating_is_rate_limited_per_learner(): void
