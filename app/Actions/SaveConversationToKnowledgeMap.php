@@ -157,11 +157,9 @@ class SaveConversationToKnowledgeMap
             if ($existing === null) {
                 $saved = $topic->subtopics()->create([
                     'title' => $subtopic['title'],
-                    'content' => $subtopic['content'],
                     'position' => $nextPosition++,
                 ]);
             } else {
-                $existing->update(['content' => $subtopic['content']]);
                 $saved = $existing;
             }
 

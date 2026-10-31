@@ -11,6 +11,7 @@ use App\Enums\MessageRole;
 use App\Enums\QuestionType;
 use App\Enums\ReviewRating;
 use App\Enums\SessionKind;
+use App\Enums\SourceType;
 use App\Enums\Technique;
 use App\Models\Flashcard;
 use App\Models\Message;
@@ -106,10 +107,15 @@ class ActiveLearnerSeeder extends Seeder
         ]);
 
         [$pigments, $lightReactions, $calvinCycle, $limitingFactors] = $this->createSubtopics($topic, [
-            'Light and pigments',
-            'Light-dependent reactions',
-            'The Calvin cycle',
-            'Limiting factors',
+            'Light and pigments' => 'Chlorophyll in the chloroplasts absorbs **red and blue** light and reflects green, which is why leaves look green.',
+            'Light-dependent reactions' => 'In the thylakoids, light energy splits water. Oxygen is released, and the energy is stored as **ATP** and **NADPH**.',
+            'The Calvin cycle' => 'In the stroma, the enzyme RuBisCO fixes CO2. The cycle uses ATP and NADPH from the light reactions to build glucose.',
+            'Limiting factors' => 'The rate of photosynthesis is limited by whichever is lowest: light intensity, CO2 concentration or temperature.',
+        ]);
+        // The learner's own note on one subtopic, so the Sources tab shows every kind of source.
+        $limitingFactors->sources()->create([
+            'type' => SourceType::Own,
+            'content' => 'Greenhouses add CO2 and keep it warm, so light becomes the limit on a sunny day.',
         ]);
 
         $notes = "Photosynthesis happens in the chloroplasts.\n"
@@ -119,7 +125,7 @@ class ActiveLearnerSeeder extends Seeder
             .'Limiting factors: light intensity, CO2 concentration and temperature.';
         Storage::disk('local')->put('materials/seed/photosynthesis-notes.txt', $notes);
 
-        $topic->materials()->create([
+        $material = $topic->materials()->create([
             'user_id' => $user->id,
             'original_filename' => 'photosynthesis-notes.txt',
             'storage_path' => 'materials/seed/photosynthesis-notes.txt',
@@ -128,6 +134,17 @@ class ActiveLearnerSeeder extends Seeder
             'extracted_text' => $notes,
             'status' => MaterialStatus::Ready,
             'created_at' => now()->subDays(21),
+        ]);
+        // As splitting the file over the subtopics at save would have done.
+        $pigments->sources()->create([
+            'type' => SourceType::File,
+            'material_id' => $material->id,
+            'content' => "Photosynthesis happens in the chloroplasts.\n\nChlorophyll absorbs red and blue light and reflects green.",
+        ]);
+        $calvinCycle->sources()->create([
+            'type' => SourceType::File,
+            'material_id' => $material->id,
+            'content' => 'Calvin cycle (stroma): CO2 is fixed by RuBisCO and turned into glucose using ATP and NADPH.',
         ]);
 
         $session = $this->createSession($user, $topic, SessionKind::Learn, now()->subDays(3)->setTime(19, 5));
@@ -197,10 +214,10 @@ class ActiveLearnerSeeder extends Seeder
         ]);
 
         [$greetings, $numbers, $serEstar, $arVerbs] = $this->createSubtopics($topic, [
-            'Greetings',
-            'Numbers 1 to 20',
-            'Ser and estar',
-            'Present tense -ar verbs',
+            'Greetings' => '"Buenos días" in the morning, "buenas tardes" from lunch until dark, "buenas noches" when leaving or late at night.',
+            'Numbers 1 to 20' => 'Uno, dos, tres, cuatro, cinco ... diez. From sixteen they join up: dieciséis, diecisiete, dieciocho, diecinueve, veinte.',
+            'Ser and estar' => 'Both mean "to be". **Ser** is for what something is (identity, origin, time); **estar** is for where it is and how it is right now.',
+            'Present tense -ar verbs' => 'Drop -ar and add -o, -as, -a, -amos, -áis, -an: hablo, hablas, habla, hablamos, habláis, hablan.',
         ]);
 
         $session = $this->createSession($user, $topic, SessionKind::Learn, now()->subDays(2)->setTime(20, 15));
@@ -279,15 +296,19 @@ class ActiveLearnerSeeder extends Seeder
     }
 
     /**
-     * @param  array<int, string>  $titles
+     * Subtopics as saved from a conversation, each with the tutor's notes as its source.
+     *
+     * @param  array<string, string>  $tutorNotesPerTitle
      * @return array<int, Subtopic>
      */
-    private function createSubtopics(Topic $topic, array $titles): array
+    private function createSubtopics(Topic $topic, array $tutorNotesPerTitle): array
     {
         $subtopics = [];
 
-        foreach ($titles as $index => $title) {
-            $subtopics[] = $topic->subtopics()->create(['title' => $title, 'position' => $index + 1]);
+        foreach ($tutorNotesPerTitle as $title => $tutorNotes) {
+            $subtopic = $topic->subtopics()->create(['title' => $title, 'position' => count($subtopics) + 1]);
+            $subtopic->sources()->create(['type' => SourceType::Tutor, 'content' => $tutorNotes]);
+            $subtopics[] = $subtopic;
         }
 
         return $subtopics;

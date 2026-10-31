@@ -40,7 +40,6 @@ class AddSubtopics
                 $created = $topic->subtopics()->create([
                     'title' => $subtopic['title'],
                     'description' => $subtopic['description'],
-                    'content' => $subtopic['notes'],
                     'position' => $nextPosition++,
                 ]);
 

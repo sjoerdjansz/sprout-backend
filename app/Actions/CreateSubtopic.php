@@ -34,7 +34,6 @@ class CreateSubtopic
             $subtopic = $topic->subtopics()->create([
                 'title' => $title,
                 'description' => $description,
-                'content' => $notes,
                 'position' => ($topic->subtopics()->max('position') ?? 0) + 1,
             ]);
 

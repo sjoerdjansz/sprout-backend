@@ -39,7 +39,6 @@ class UpdateSubtopic
                 'topic_id' => $targetTopic->id,
                 'title' => $title,
                 'description' => $description,
-                'content' => $notes,
                 'position' => $isMoving ? ($targetTopic->subtopics()->max('position') ?? 0) + 1 : $subtopic->position,
             ]);
 
