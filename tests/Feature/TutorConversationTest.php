@@ -68,11 +68,12 @@ class TutorConversationTest extends TestCase
 
         $this->postJson('/api/v1/conversations', ['message' => 'Teach me biomechanics'])->assertCreated();
 
-        Http::assertSent(function (Request $request): bool {
+        Http::assertSent(function (Request $request) use ($learner): bool {
             $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
 
             return $request->hasHeader('Authorization', 'Bearer '.self::LEARNER_API_KEY)
                 && $request['model'] === config('ai.levels.low.chat_model')
+                && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
                 && $context['learner']['name'] === 'Ada'
                 && $context['saved_topic'] === null
@@ -110,6 +111,20 @@ class TutorConversationTest extends TestCase
                 && $context['saved_topic']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'mastery_percentage' => 40]]
                 && $context['draft']['subtopics'] === [['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']];
         });
+    }
+
+    public function test_the_safety_identifier_tells_learners_apart_without_saying_who_they_are(): void
+    {
+        $learner = User::factory()->create(['email' => 'ada@example.com']);
+        $otherLearner = User::factory()->create();
+
+        $identifier = $learner->aiSafetyIdentifier();
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $identifier);
+        $this->assertSame($identifier, $learner->fresh()->aiSafetyIdentifier());
+        $this->assertNotSame($identifier, $otherLearner->aiSafetyIdentifier());
+        $this->assertNotSame(hash('sha256', (string) $learner->id), $identifier);
+        $this->assertNotSame(hash('sha256', 'ada@example.com'), $identifier);
     }
 
     public function test_a_conversation_cannot_continue_someone_elses_topic(): void

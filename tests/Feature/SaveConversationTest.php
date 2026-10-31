@@ -70,10 +70,11 @@ class SaveConversationTest extends TestCase
         $this->assertTrue($conversation->topic->is($topic));
         $this->assertTrue($conversation->isSaved());
 
-        Http::assertSent(function (Request $request): bool {
+        Http::assertSent(function (Request $request) use ($learner): bool {
             $input = json_decode($request['messages'][1]['content'], true);
 
             return $request['model'] === config('ai.levels.medium.generation_model')
+                && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $input['topic'] === ['title' => 'Biomechanics of running', 'goal' => 'Explain the running gait to my athletes']
                 && $input['subtopics'][0] === ['title' => 'Gait cycle', 'content' => 'Stance and swing phases.', 'existing_items' => []];
         });

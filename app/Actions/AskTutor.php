@@ -50,6 +50,7 @@ class AskTutor
             schema: self::replySchema(),
             maxCompletionTokens: config('ai.chat.max_completion_tokens'),
             timeoutSeconds: config('ai.chat.timeout_seconds'),
+            safetyIdentifier: $learner->aiSafetyIdentifier(),
         );
 
         return [

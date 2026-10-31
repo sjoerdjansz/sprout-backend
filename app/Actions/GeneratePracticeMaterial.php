@@ -43,6 +43,7 @@ class GeneratePracticeMaterial
             schema: self::materialSchema(),
             maxCompletionTokens: config('ai.generation.max_completion_tokens'),
             timeoutSeconds: config('ai.generation.timeout_seconds'),
+            safetyIdentifier: $learner->aiSafetyIdentifier(),
         );
 
         $generatedSubtopics = $completion['content']['subtopics'];
