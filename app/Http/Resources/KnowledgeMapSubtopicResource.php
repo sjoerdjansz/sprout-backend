@@ -31,6 +31,7 @@ class KnowledgeMapSubtopicResource extends JsonResource
             'description' => $subtopic->description,
             // Only the learner's own notes: the tutor's notes and file parts are sources of their own.
             'notes' => $subtopic->sourceContent(SourceType::Own),
+            'source_count' => $subtopic->sources->count(),
             'generation_status' => $subtopic->generation_status,
             'mastery' => $progress['mastery'],
             'due_cards' => $progress['due_cards'],

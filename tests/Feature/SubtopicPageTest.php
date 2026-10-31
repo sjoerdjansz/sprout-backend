@@ -9,10 +9,12 @@ use App\Models\Answer;
 use App\Models\Category;
 use App\Models\Flashcard;
 use App\Models\FlashcardReview;
+use App\Models\Material;
 use App\Models\Question;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\SubtopicProgress;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -56,7 +58,38 @@ class SubtopicPageTest extends TestCase
             ->assertJsonPath('due_cards', 1)
             ->assertJsonPath('facets.cards', ['percent' => null, 'holding' => false])
             ->assertJsonPath('topic', ['id' => $topic->id, 'title' => 'Biology', 'category' => ['id' => $category->id, 'name' => 'Science']])
-            ->assertJsonPath('counts', ['flashcards' => 2, 'questions' => 1, 'sessions' => 2]);
+            ->assertJsonPath('counts', ['flashcards' => 2, 'questions' => 1, 'sessions' => 2])
+            ->assertJsonPath('source_count', 1);
+    }
+
+    public function test_a_subtopic_shows_its_sources_tutor_notes_first_then_your_notes_then_files(): void
+    {
+        $learner = User::factory()->create();
+        $topic = Topic::factory()->for($learner)->create();
+        $subtopic = Subtopic::factory()->for($topic)->create();
+        $lecture = Material::factory()->for($topic)->create(['original_filename' => 'Lecture 1.pdf']);
+        $filePart = SubtopicSource::factory()->for($subtopic)->file($lecture)->create(['content' => 'Cadence is steps per minute.']);
+        $ownNotes = SubtopicSource::factory()->for($subtopic)->own()->create(['content' => 'My coach says 170.']);
+        $tutorNotes = SubtopicSource::factory()->for($subtopic)->tutor()->create(['content' => 'Steps per minute.']);
+        Sanctum::actingAs($learner);
+
+        $this->getJson("/api/v1/subtopics/{$subtopic->id}")
+            ->assertOk()
+            ->assertJsonPath('notes', 'My coach says 170.')
+            ->assertJsonPath('source_count', 3)
+            ->assertJsonPath('sources.0', [
+                'id' => $tutorNotes->id,
+                'type' => 'tutor',
+                'content' => 'Steps per minute.',
+                'material' => null,
+                'updated_at' => $tutorNotes->updated_at->toJSON(),
+            ])
+            ->assertJsonPath('sources.1.id', $ownNotes->id)
+            ->assertJsonPath('sources.1.type', 'own')
+            ->assertJsonPath('sources.2.id', $filePart->id)
+            ->assertJsonPath('sources.2.type', 'file')
+            ->assertJsonPath('sources.2.content', 'Cadence is steps per minute.')
+            ->assertJsonPath('sources.2.material', ['id' => $lecture->id, 'original_filename' => 'Lecture 1.pdf']);
     }
 
     public function test_someone_elses_subtopic_is_not_found(): void

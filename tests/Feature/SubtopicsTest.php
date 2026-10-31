@@ -40,11 +40,12 @@ class SubtopicsTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertExactJsonStructure(['subtopic' => ['id', 'topic_id', 'title', 'description', 'notes', 'generation_status', 'mastery', 'due_cards', 'next_review_on', 'is_new', 'slipping', 'facets' => ['cards' => ['percent', 'holding'], 'explain' => ['percent', 'holding'], 'quiz' => ['percent', 'holding']]]])
+            ->assertExactJsonStructure(['subtopic' => ['id', 'topic_id', 'title', 'description', 'notes', 'source_count', 'generation_status', 'mastery', 'due_cards', 'next_review_on', 'is_new', 'slipping', 'facets' => ['cards' => ['percent', 'holding'], 'explain' => ['percent', 'holding'], 'quiz' => ['percent', 'holding']]]])
             ->assertJsonPath('subtopic.topic_id', $topic->id)
             ->assertJsonPath('subtopic.title', 'Cadence')
             ->assertJsonPath('subtopic.description', 'Steps per minute.')
             ->assertJsonPath('subtopic.notes', 'Most runners land around 170 to 180 steps per minute.')
+            ->assertJsonPath('subtopic.source_count', 1)
             ->assertJsonPath('subtopic.generation_status', 'generating')
             ->assertJsonPath('subtopic.is_new', true);
 

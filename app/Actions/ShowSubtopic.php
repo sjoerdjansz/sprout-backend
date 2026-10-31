@@ -18,7 +18,7 @@ class ShowSubtopic
      */
     public function handle(Subtopic $subtopic, User $learner): array
     {
-        $subtopic->load(['topic.category', ...SummariseSubtopicProgress::relations($learner)]);
+        $subtopic->load(['topic.category', ...SummariseSubtopicProgress::relations($learner), 'sources.material']);
 
         return [
             'subtopic' => $subtopic,

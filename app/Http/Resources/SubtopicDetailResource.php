@@ -34,6 +34,7 @@ class SubtopicDetailResource extends JsonResource
                 'category' => new CategoryResource($subtopic->topic->category),
             ],
             'counts' => $this->resource['counts'],
+            'sources' => SubtopicSourceResource::collection($subtopic->sources),
         ];
     }
 }
