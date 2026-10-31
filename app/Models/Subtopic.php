@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\GenerationStatus;
+use App\Enums\SourceType;
 use Database\Factories\SubtopicFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -50,6 +51,38 @@ class Subtopic extends Model
     public function questions(): HasMany
     {
         return $this->hasMany(Question::class);
+    }
+
+    /**
+     * What its flashcards and questions are made from (specs/subtopic-sources.md): the tutor's notes, then the
+     * learner's own notes, then the files in the order they were uploaded.
+     *
+     * @return HasMany<SubtopicSource, $this>
+     */
+    public function sources(): HasMany
+    {
+        return $this->hasMany(SubtopicSource::class)
+            ->orderByRaw("case type when 'tutor' then 1 when 'own' then 2 else 3 end")
+            ->orderBy('material_id');
+    }
+
+    /**
+     * All sources as one Markdown text, each under a heading that says where it comes from. This is what
+     * the AI reads about the subtopic; empty when it has no sources.
+     */
+    public function sourceText(): string
+    {
+        return $this->sources
+            ->map(fn (SubtopicSource $source): string => "## {$source->label()}\n\n".trim($source->content))
+            ->implode("\n\n");
+    }
+
+    /**
+     * The content of the source of one type; for tutor and own notes, of which a subtopic has at most one.
+     */
+    public function sourceContent(SourceType $type): ?string
+    {
+        return $this->sources->firstWhere('type', $type)?->content;
     }
 
     /**
