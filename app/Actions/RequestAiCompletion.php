@@ -2,7 +2,9 @@
 
 namespace App\Actions;
 
+use App\Enums\AiCallKind;
 use App\Exceptions\AiRequestFailed;
+use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -10,7 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * One call to OpenAI's Chat Completions API that must answer with JSON matching a schema.
- * This is the only place that talks to the AI provider.
+ * This is the only place that talks to the AI provider, so it also logs every call that answered
+ * (ai_calls), which the learner's usage is counted from.
  */
 class RequestAiCompletion
 {
@@ -19,7 +22,7 @@ class RequestAiCompletion
     /**
      * @param  array<int, array{role: string, content: string}>  $messages  the conversation after the instructions
      * @param  array<string, mixed>  $schema  JSON Schema the answer must follow (strict mode)
-     * @param  string  $safetyIdentifier  the learner's User::aiSafetyIdentifier()
+     * @param  User  $learner  who the call is for: their safety identifier is sent, and the call counts towards their usage
      * @return array{content: array<string, mixed>, model: string, input_tokens: int, output_tokens: int}
      *
      * @throws AiRequestFailed when the key doesn't work or no usable answer came back.
@@ -33,7 +36,8 @@ class RequestAiCompletion
         array $schema,
         int $maxCompletionTokens,
         int $timeoutSeconds,
-        string $safetyIdentifier,
+        User $learner,
+        AiCallKind $kind,
     ): array {
         try {
             $response = Http::withToken($apiKey)
@@ -50,7 +54,7 @@ class RequestAiCompletion
                         'type' => 'json_schema',
                         'json_schema' => ['name' => $schemaName, 'strict' => true, 'schema' => $schema],
                     ],
-                    'safety_identifier' => $safetyIdentifier,
+                    'safety_identifier' => $learner->aiSafetyIdentifier(),
                 ]);
         } catch (ConnectionException $exception) {
             Log::warning('The AI provider could not be reached.', ['model' => $model, 'error' => $exception->getMessage()]);
@@ -60,12 +64,21 @@ class RequestAiCompletion
 
         $this->ensureSuccessful($response, $model);
 
-        return [
+        $completion = [
             'content' => $this->decodeAnswer($response, $model),
             'model' => (string) $response->json('model', $model),
             'input_tokens' => (int) $response->json('usage.prompt_tokens', 0),
             'output_tokens' => (int) $response->json('usage.completion_tokens', 0),
         ];
+
+        $learner->aiCalls()->create([
+            'kind' => $kind,
+            'model' => $completion['model'],
+            'input_tokens' => $completion['input_tokens'],
+            'output_tokens' => $completion['output_tokens'],
+        ]);
+
+        return $completion;
     }
 
     /**
@@ -77,20 +90,21 @@ class RequestAiCompletion
             return;
         }
 
-        if ($response->status() === 401) {
-            throw AiRequestFailed::keyRejected();
-        }
-
-        // OpenAI uses 429 both for "slow down" and for an account without credit.
-        if ($response->status() === 429 && $response->json('error.type') === 'insufficient_quota') {
-            throw AiRequestFailed::outOfCredit();
-        }
-
-        Log::warning('The AI provider answered with an error.', [
+        $context = [
             'model' => $model,
             'status' => $response->status(),
             'error' => $response->json('error.message'),
-        ]);
+        ];
+
+        // A rejected key or an account without credit (OpenAI uses 429 for that too) breaks the AI for every
+        // learner until someone fixes Sprout's key, so it is an error rather than a warning.
+        if ($response->status() === 401 || $response->json('error.type') === 'insufficient_quota') {
+            Log::error('The AI provider rejected Sprout\'s key or the account has no credit.', $context);
+
+            throw AiRequestFailed::outOfService();
+        }
+
+        Log::warning('The AI provider answered with an error.', $context);
 
         throw AiRequestFailed::unavailable();
     }

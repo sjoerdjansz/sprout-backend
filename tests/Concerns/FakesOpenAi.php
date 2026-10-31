@@ -2,7 +2,6 @@
 
 namespace Tests\Concerns;
 
-use App\Models\AiCredential;
 use App\Models\User;
 use App\Models\UserSetting;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -13,13 +12,17 @@ use Illuminate\Support\Facades\Http;
  */
 trait FakesOpenAi
 {
-    protected const LEARNER_API_KEY = 'sk-learner-test-key';
+    protected const SPROUT_API_KEY = 'sk-sprout-test-key';
 
-    protected function learnerWithKey(): User
+    /**
+     * A learner, with Sprout's own AI key configured (ResolveAiKey).
+     */
+    protected function learnerWithAiConfigured(): User
     {
+        config(['services.openai.key' => self::SPROUT_API_KEY]);
+
         $learner = User::factory()->create(['name' => 'Ada']);
         UserSetting::factory()->for($learner)->create();
-        AiCredential::factory()->for($learner)->create(['encrypted_api_key' => self::LEARNER_API_KEY]);
 
         return $learner;
     }

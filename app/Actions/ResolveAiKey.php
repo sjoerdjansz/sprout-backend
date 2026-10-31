@@ -2,34 +2,29 @@
 
 namespace App\Actions;
 
-use App\Enums\AiProvider;
 use App\Exceptions\AiRequestFailed;
-use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 /**
- * Which API key the learner's AI calls use. Today that is their own OpenAI key; where the key comes
- * from may change later (a business key, see VISION.md), which is why this is the only place deciding it.
+ * Which API key the AI calls use: Sprout's own OpenAI key (OPENAI_API_KEY). Learners don't bring a key
+ * (specs/settings.md, 2026-10-31). Where the key comes from may change again, which is why this is the
+ * only place deciding it.
  */
 class ResolveAiKey
 {
     /**
-     * @throws AiRequestFailed when the learner has no key.
+     * @throws AiRequestFailed when no key is configured: that is Sprout's problem, so the learner gets a 503.
      */
-    public function handle(User $user): string
+    public function handle(): string
     {
-        $credential = $user->aiCredentials()->where('provider', AiProvider::OpenAi)->first();
+        $apiKey = config('services.openai.key');
 
-        if ($credential !== null) {
-            return $credential->encrypted_api_key;
+        if (! is_string($apiKey) || $apiKey === '') {
+            Log::error('OPENAI_API_KEY is not set, so the AI can\'t be called.');
+
+            throw AiRequestFailed::outOfService();
         }
 
-        // Connecting a key isn't built yet, so locally every account may use the developer's key.
-        $developmentKey = config('services.openai.key');
-
-        if (app()->isLocal() && is_string($developmentKey) && $developmentKey !== '') {
-            return $developmentKey;
-        }
-
-        throw AiRequestFailed::missingKey();
+        return $apiKey;
     }
 }

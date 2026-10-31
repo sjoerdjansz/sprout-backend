@@ -3,9 +3,9 @@
 namespace Database\Seeders;
 
 use App\Actions\CreateStarterCategories;
-use App\Enums\AiProvider;
 use App\Enums\ContentOrigin;
 use App\Enums\Interest;
+use App\Enums\LearnerRole;
 use App\Enums\MaterialStatus;
 use App\Enums\MessageRole;
 use App\Enums\QuestionType;
@@ -42,6 +42,7 @@ class ActiveLearnerSeeder extends Seeder
 
         $ada->settings()->create([
             'interests' => [Interest::Science, Interest::Languages],
+            'learner_role' => LearnerRole::CareerSwitcher,
             'wants_daily_reminder' => true,
             'timezone' => 'Europe/Amsterdam',
             'daily_goal_cards' => 20,
@@ -50,7 +51,6 @@ class ActiveLearnerSeeder extends Seeder
 
         (new CreateStarterCategories)->handle($ada);
 
-        $this->connectDevelopmentApiKey($ada);
         $this->seedPhotosynthesis($ada);
         $this->seedSpanish($ada);
         $this->seedMixedReviewYesterday($ada);
@@ -90,27 +90,6 @@ class ActiveLearnerSeeder extends Seeder
             [MessageRole::Tutor, null, 'Nice, that gives us a clear focus. Before I explain anything: when you watch one of your runners, which phases of a stride can you already name?'],
             [MessageRole::User, null, 'When the foot is on the ground and when it swings forward?'],
             [MessageRole::Tutor, null, "Exactly right: the **stance** and **swing** phases. The one missing piece is the **flight phase**, when both feet are off the ground. That's what makes running different from walking. What do you think happens to the forces on the leg when the foot lands after a flight phase?"],
-        ]);
-    }
-
-    /**
-     * Gives Ada the developer's OpenAI key from .env, so the tutor works with this account locally.
-     */
-    private function connectDevelopmentApiKey(User $user): void
-    {
-        $apiKey = config('services.openai.key');
-
-        if (blank($apiKey)) {
-            $this->command?->warn('OPENAI_API_KEY is empty: ada@sprout.test gets no AI key.');
-
-            return;
-        }
-
-        $user->aiCredentials()->create([
-            'provider' => AiProvider::OpenAi,
-            'encrypted_api_key' => $apiKey,
-            'key_last_four' => substr($apiKey, -4),
-            'validated_at' => null,
         ]);
     }
 

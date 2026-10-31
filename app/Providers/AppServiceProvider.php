@@ -89,5 +89,14 @@ class AppServiceProvider extends ServiceProvider
                 429,
                 $headers,
             )));
+
+        // Exports and resets read or write all of a learner's data, so a few per minute is plenty.
+        RateLimiter::for('account-data', fn (Request $request): Limit => Limit::perMinute(5)
+            ->by((string) $request->user()?->id)
+            ->response(fn (Request $request, array $headers): JsonResponse => response()->json(
+                ['message' => "You've done this a few times in a row. Wait a minute and try again."],
+                429,
+                $headers,
+            )));
     }
 }

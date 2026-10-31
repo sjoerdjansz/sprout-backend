@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\AiCallKind;
 use App\Enums\AiLevel;
 use App\Enums\Interest;
 use App\Enums\MessageRole;
@@ -35,7 +36,7 @@ class AskTutor
         $level = $learner->settings?->ai_level ?? AiLevel::Medium;
 
         $completion = $this->requestAiCompletion->handle(
-            apiKey: $this->resolveAiKey->handle($learner),
+            apiKey: $this->resolveAiKey->handle(),
             model: $level->chatModel(),
             instructions: file_get_contents(resource_path('prompts/tutor.md')),
             messages: [
@@ -50,7 +51,8 @@ class AskTutor
             schema: self::replySchema(),
             maxCompletionTokens: config('ai.chat.max_completion_tokens'),
             timeoutSeconds: config('ai.chat.timeout_seconds'),
-            safetyIdentifier: $learner->aiSafetyIdentifier(),
+            learner: $learner,
+            kind: AiCallKind::TutorReply,
         );
 
         return [
@@ -87,6 +89,7 @@ class AskTutor
             'today' => now()->toDateString(),
             'learner' => [
                 'name' => $learner->name,
+                'role' => $learner->settings?->learner_role?->value,
                 'interests' => $learner->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
                 'categories' => $learner->categories()->orderBy('id')->pluck('name'),
             ],

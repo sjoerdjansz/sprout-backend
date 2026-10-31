@@ -12,6 +12,7 @@
 //   are derived from them and stored so screens stay fast.
 // - "Prompts" means the chat history: study_sessions + messages. Prompt templates live in code.
 // - One AI key per provider per user; token usage is logged per tutor message so learners see their costs.
+//   (Superseded 2026-10-31: Sprout uses its own key; see the settings decisions below.)
 // - Deleting: every foreign key cascades on delete unless its note says otherwise, so deleting a user or a
 //   topic erases everything under it (GDPR). Archiving a topic only hides it.
 //
@@ -29,6 +30,14 @@
 // Decisions (2026-10-30, specs/subtopic-page.md):
 // - No new tables. Pausing a card sets flashcards.suspended_at. Deleting a subtopic, card, question or
 //   conversation from the subtopic page removes the row for good (the keys cascade); undo lives in the frontend.
+//
+// Decisions (2026-10-31, specs/settings.md):
+// - Every preference on the settings page is a column on user_settings, with a default, so sign up stays as it is.
+//   Learning and reminder preferences are stored for later features; nothing reads them yet.
+// - An email change waits in email_changes until the link sent to the new address is opened.
+// - Sprout uses its own AI key, not the learner's: ai_credentials is unused and can be dropped later.
+// - Deleting an account removes the user row (everything cascades), its Sanctum tokens and its uploaded files.
+// - Every AI call that answers is logged in ai_calls, so usage is counted per learner and per kind of call.
 
 Project sprout {
   database_type: 'MySQL'
@@ -85,15 +94,68 @@ Table user_settings {
   id bigint [pk, increment]
   user_id bigint [not null, unique, ref: - users.id]
   interests json [null, note: 'Array of Interest enum values (languages, science, coding, history, maths, other), picked at sign up']
-  ai_level ai_level [not null, default: 'medium', note: 'How capable (and costly) the AI is; models per level in config/ai.php']
+  learner_role learner_role [null, note: '"What brings you to Sprout?"; passed to the tutor. Null until picked']
+  avatar_color avatar_color [not null, default: 'sun', note: 'The colour behind the learner\'s initials']
+  ai_level ai_level [not null, default: 'medium', note: 'How capable (and costly) the AI is ("Effort" in the UI); models per level in config/ai.php']
   wants_daily_reminder boolean [not null, default: false]
   timezone varchar(64) [not null, default: 'UTC', note: 'Needed for streaks, "due today" and reminder times']
-  daily_goal_cards smallint [not null, default: 20]
-  reminder_time time [null]
+  daily_goal_cards smallint [not null, default: 20, note: '10, 20 or 40']
+  session_size smallint [not null, default: 20, note: '10, 20 or 40: cards or questions per practice session']
+  interleave_subtopics boolean [not null, default: true, note: 'Practice default; not read yet']
+  hint_before_answer boolean [not null, default: true, note: 'Practice default; not read yet']
+  save_chats_as_material boolean [not null, default: true, note: 'Not read yet']
+  reminder_time time [not null, default: '19:00:00', note: 'In the learner\'s timezone']
+  wants_streak_reminder boolean [not null, default: false]
+  wants_weekly_insights boolean [not null, default: false]
+  reminder_channel reminder_channel [not null, default: 'email', note: 'Stored only: nothing sends reminders yet']
+  theme theme [not null, default: 'system']
+  reduce_motion boolean [not null, default: false]
+  sound_effects boolean [not null, default: true]
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. One row per user, created at sign up. Keeps users about the account only.'
+  Note: 'BUILT. One row per user, created at sign up. Keeps users about the account only. The settings page (specs/settings.md) edits it.'
+}
+
+Enum learner_role {
+  student
+  professional
+  career_switcher
+  curious
+  teacher
+  language_learner
+}
+
+Enum avatar_color {
+  sun
+  mint
+  peach
+  sky
+}
+
+Enum reminder_channel {
+  push
+  email
+  both
+}
+
+Enum theme {
+  light
+  dark
+  system
+}
+
+Table email_changes {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  new_email varchar(255) [not null, note: 'Stored lowercase']
+  token_hash varchar(64) [not null, unique, note: 'SHA-256 of the token in the email to the new address']
+  expires_at timestamp [not null, note: '60 minutes after sending']
+  used_at timestamp [null, note: 'Set when confirmed; a link works once']
+  created_at timestamp
+  updated_at timestamp
+
+  Note: 'BUILT. A pending email change; a new request deletes the older ones.'
 }
 
 Enum ai_level {
@@ -108,7 +170,7 @@ Table ai_credentials {
   provider ai_provider [not null]
   encrypted_api_key text [not null, note: 'Laravel encrypted cast; never returned by the API']
   key_last_four varchar(4) [not null, note: 'So the UI can show "sk-...abcd"']
-  model varchar(100) [null, note: 'Unused: replaced by user_settings.ai_level. Drop it with the key feature']
+  model varchar(100) [null, note: 'Unused: replaced by user_settings.ai_level']
   validated_at timestamp [null, note: 'Last successful check against the provider']
   created_at timestamp
   updated_at timestamp
@@ -117,11 +179,35 @@ Table ai_credentials {
     (user_id, provider) [unique]
   }
 
-  Note: 'BUILT. The user\'s own AI key (bring your own key).'
+  Note: 'BUILT, UNUSED since 2026-10-31: Sprout uses its own AI key (ResolveAiKey), so learners don\'t bring one. Nothing reads or writes it; drop it in a later cleanup.'
 }
 
 Enum ai_provider {
   openai
+}
+
+Table ai_calls {
+  id bigint [pk, increment]
+  user_id bigint [not null, ref: > users.id]
+  kind ai_call_kind [not null]
+  model varchar(100) [not null, note: 'The model that answered; never shown to learners']
+  input_tokens int [not null]
+  output_tokens int [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  Indexes {
+    (user_id, created_at)
+  }
+
+  Note: 'BUILT. One row per AI call that answered, written by RequestAiCompletion. Usage in settings counts these; a monthly allowance will too.'
+}
+
+Enum ai_call_kind {
+  tutor_reply
+  answer_check [note: 'Practice Hub; not logged yet']
+  explain_feedback [note: 'Practice Hub; not logged yet']
+  card_generation
 }
 
 // ---------------------------------------------------------------------------
