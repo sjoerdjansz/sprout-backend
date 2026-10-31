@@ -2,7 +2,10 @@
 
 namespace App\Actions;
 
+use App\Enums\GenerationStatus;
+use App\Enums\MaterialStatus;
 use App\Enums\MessageRole;
+use App\Jobs\SplitSourcesOverSubtopics;
 use App\Models\Material;
 use App\Models\StudySession;
 use App\Models\Subtopic;
@@ -14,7 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Saves the reviewed draft of a conversation as a topic in the knowledge map with the files sent in it,
- * queues flashcards and questions for what is new, and ends the conversation. Continuing a topic adds to the same topic.
+ * queues flashcards and questions for what is new (after splitting those files over the subtopics), and
+ * ends the conversation. Continuing a topic adds to the same topic.
  * The AI isn't called here: the material is made in the background (specs/background-generation.md).
  */
 class SaveConversationToKnowledgeMap
@@ -76,16 +80,20 @@ class SaveConversationToKnowledgeMap
                 $topic->update($topicAttributes);
             }
 
-            // The files sent in the conversation become the topic's sources, which card generation reads.
-            Material::whereIn('message_id', $conversation->messages()->select('id'))
-                ->whereNull('topic_id')
-                ->update(['topic_id' => $topic->id]);
+            // The files sent in the conversation become the topic's sources.
+            $sentMaterials = Material::whereIn('message_id', $conversation->messages()->select('id'))->whereNull('topic_id');
+            $readMaterialIds = (clone $sentMaterials)->where('status', MaterialStatus::Ready)->pluck('id')->all();
+            $sentMaterials->update(['topic_id' => $topic->id]);
 
             $savedSubtopics = $this->saveSubtopics($topic, $existingSubtopics, $subtopics);
             $sourceMessageId = $conversation->messages()->where('role', MessageRole::Tutor)->latest('id')->value('id');
 
-            foreach ($keysNeedingMaterial as $key) {
-                $this->queueMaterialGeneration->handle($savedSubtopics[$key], $sourceMessageId);
+            if ($readMaterialIds === []) {
+                foreach ($keysNeedingMaterial as $key) {
+                    $this->queueMaterialGeneration->handle($savedSubtopics[$key], $sourceMessageId);
+                }
+            } else {
+                $this->splitSourcesFirst($topic, $readMaterialIds, $keysNeedingMaterial, $savedSubtopics, $sourceMessageId);
             }
 
             $conversation->update([
@@ -104,6 +112,26 @@ class SaveConversationToKnowledgeMap
                 'added_subtopics' => count(array_diff_key($savedSubtopics, $existingSubtopics->all())),
             ];
         });
+    }
+
+    /**
+     * Each subtopic's part of the files goes into its notes before its material is made, so the job queues the
+     * material itself (specs/chat-attachments.md). The subtopics already say their cards are coming.
+     *
+     * @param  array<int, int>  $materialIds
+     * @param  array<int, string>  $keysNeedingMaterial
+     * @param  array<string, Subtopic>  $savedSubtopics  keyed by lowercase title
+     */
+    private function splitSourcesFirst(Topic $topic, array $materialIds, array $keysNeedingMaterial, array $savedSubtopics, ?int $sourceMessageId): void
+    {
+        $subtopicIdsNeedingMaterial = [];
+
+        foreach ($keysNeedingMaterial as $key) {
+            $savedSubtopics[$key]->update(['generation_status' => GenerationStatus::Generating]);
+            $subtopicIdsNeedingMaterial[] = $savedSubtopics[$key]->id;
+        }
+
+        SplitSourcesOverSubtopics::dispatch($topic, $materialIds, $subtopicIdsNeedingMaterial, $sourceMessageId)->afterCommit();
     }
 
     /**
