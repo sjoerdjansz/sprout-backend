@@ -3,10 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\SourceType;
+use App\Models\Flashcard;
 use App\Models\Material;
+use App\Models\Question;
 use App\Models\Subtopic;
 use App\Models\SubtopicSource;
+use App\Models\Topic;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
@@ -63,5 +69,54 @@ class SubtopicSourcesTest extends TestCase
 
         $subtopic->delete();
         $this->assertModelMissing($tutorNotes);
+    }
+
+    public function test_guest_cannot_remove_a_source(): void
+    {
+        $this->deleteJson('/api/v1/subtopics/1/sources/1')->assertUnauthorized();
+    }
+
+    public function test_any_source_can_be_removed_and_its_cards_and_questions_stay(): void
+    {
+        Queue::fake();
+        $learner = User::factory()->create();
+        $topic = Topic::factory()->for($learner)->create();
+        $subtopic = Subtopic::factory()->for($topic)->create();
+        $lecture = Material::factory()->for($topic)->create();
+        $sources = [
+            SubtopicSource::factory()->for($subtopic)->tutor()->create(),
+            SubtopicSource::factory()->for($subtopic)->own()->create(),
+            SubtopicSource::factory()->for($subtopic)->file($lecture)->create(),
+        ];
+        $flashcard = Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create();
+        $question = Question::factory()->for($topic)->for($subtopic)->create();
+        Sanctum::actingAs($learner);
+
+        foreach ($sources as $source) {
+            $this->deleteJson("/api/v1/subtopics/{$subtopic->id}/sources/{$source->id}")->assertNoContent();
+            $this->assertModelMissing($source);
+        }
+
+        $this->assertModelExists($flashcard);
+        $this->assertModelExists($question);
+        // A file part only leaves the subtopic: the file stays with the topic.
+        $this->assertModelExists($lecture);
+        Queue::assertNothingPushed();
+        $this->getJson("/api/v1/subtopics/{$subtopic->id}")->assertJsonPath('source_count', 0)->assertJsonPath('notes', null);
+    }
+
+    public function test_someone_elses_source_or_one_of_another_subtopic_is_not_found(): void
+    {
+        $learner = User::factory()->create();
+        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create();
+        $otherSubtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create();
+        $ofOtherSubtopic = SubtopicSource::factory()->for($otherSubtopic)->create();
+        $someoneElses = SubtopicSource::factory()->create();
+        Sanctum::actingAs($learner);
+
+        $this->deleteJson("/api/v1/subtopics/{$subtopic->id}/sources/{$ofOtherSubtopic->id}")->assertNotFound();
+        $this->deleteJson("/api/v1/subtopics/{$someoneElses->subtopic_id}/sources/{$someoneElses->id}")->assertNotFound();
+        $this->assertModelExists($ofOtherSubtopic);
+        $this->assertModelExists($someoneElses);
     }
 }

@@ -20,6 +20,7 @@ use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\AddSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
+use App\Http\Controllers\KnowledgeMap\DeleteSubtopicSourceController;
 use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
@@ -147,6 +148,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('throttle:generate-material')
             ->name('update');
         Route::delete('/{subtopic}', DeleteSubtopicController::class)->whereNumber('subtopic')->name('destroy');
+        // A subtopic's sources (specs/subtopic-sources.md).
+        Route::delete('/{subtopic}/sources/{source}', DeleteSubtopicSourceController::class)
+            ->whereNumber(['subtopic', 'source'])
+            ->name('sources.destroy');
         Route::post('/{subtopic}/generate', GenerateMoreMaterialController::class)
             ->whereNumber('subtopic')
             ->middleware('throttle:generate-more-material')
