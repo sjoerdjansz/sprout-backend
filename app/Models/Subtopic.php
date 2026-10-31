@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\GenerationStatus;
 use Database\Factories\SubtopicFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,11 +13,20 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * A concept within a topic; the unit mastery is tracked on.
  */
-#[Fillable(['topic_id', 'title', 'description', 'content', 'position'])]
+#[Fillable(['topic_id', 'title', 'description', 'content', 'position', 'generation_status'])]
 class Subtopic extends Model
 {
     /** @use HasFactory<SubtopicFactory> */
     use HasFactory;
+
+    /**
+     * Mirrors the column's default, so a subtopic that was just created has its status without a refresh.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'generation_status' => 'ready',
+    ];
 
     /**
      * @return BelongsTo<Topic, $this>
@@ -59,6 +69,7 @@ class Subtopic extends Model
     {
         return [
             'position' => 'integer',
+            'generation_status' => GenerationStatus::class,
         ];
     }
 }

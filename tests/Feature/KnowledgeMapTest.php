@@ -55,6 +55,7 @@ class KnowledgeMapTest extends TestCase
                 'title' => 'Light',
                 'description' => 'What light does.',
                 'notes' => 'Red and blue.',
+                'generation_status' => 'ready',
                 'mastery' => 0,
                 'due_cards' => 0,
                 'next_review_on' => null,

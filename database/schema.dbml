@@ -251,10 +251,17 @@ Table subtopics {
   description text [null, note: 'What the subtopic should cover, in a line']
   content text [null, note: 'The notes its cards and questions are made from: what the tutor explained, or the learner\'s notes ("notes" in the API)']
   position smallint [not null, note: 'Order within the topic']
+  generation_status generation_status [not null, default: 'ready', note: 'Whether its flashcards and questions are still being made in the background (specs/background-generation.md)']
   created_at timestamp
   updated_at timestamp
 
   Note: 'BUILT. The concepts a topic is split into; the unit mastery is tracked on.'
+}
+
+Enum generation_status {
+  ready
+  generating
+  failed
 }
 
 Table materials {

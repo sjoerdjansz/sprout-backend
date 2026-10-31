@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\ContentOrigin;
+use App\Enums\GenerationStatus;
 use App\Enums\MessageRole;
 use App\Enums\QuestionType;
+use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Category;
 use App\Models\Flashcard;
 use App\Models\Message;
@@ -16,6 +18,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
@@ -25,17 +28,14 @@ class SaveConversationTest extends TestCase
     use FakesOpenAi;
     use RefreshDatabase;
 
-    public function test_saving_creates_the_topic_with_its_goal_subtopics_and_practice_material(): void
+    public function test_saving_creates_the_topic_with_its_goal_and_subtopics_and_queues_their_material(): void
     {
-        $this->freezeSecond();
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         $tutorMessage = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor]);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [
-            $this->material('Gait cycle', flashcards: 2, withQuestions: true),
-            $this->material('Ground reaction force', flashcards: 1),
-        ]])]);
+        Http::fake();
 
         $response = $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft());
 
@@ -47,15 +47,46 @@ class SaveConversationTest extends TestCase
                 'recall_percentage' => 80,
             ])
             ->assertJsonPath('topic.subtopics.0.title', 'Gait cycle')
+            ->assertJsonPath('topic.subtopics.0.generation_status', 'generating')
             ->assertJsonPath('topic.subtopics.1.title', 'Ground reaction force')
-            ->assertJsonPath('added', ['subtopics' => 2, 'flashcards' => 3, 'questions' => 2]);
+            ->assertJsonPath('added', ['subtopics' => 2]);
 
         $topic = Topic::sole();
         $this->assertTrue($topic->user->is($learner));
         $this->assertSame([1, 2], $topic->subtopics()->orderBy('position')->pluck('position')->all());
         $this->assertSame('Stance and swing phases.', $topic->subtopics()->where('title', 'Gait cycle')->value('content'));
 
+        $conversation->refresh();
+        $this->assertTrue($conversation->topic->is($topic));
+        $this->assertTrue($conversation->isSaved());
+
+        // Saving never waits for the AI: the material is made by a job per subtopic.
+        Http::assertNothingSent();
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 2);
+        Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->title === 'Gait cycle' && $job->sourceMessageId === $tutorMessage->id);
+    }
+
+    public function test_the_material_made_after_saving_comes_from_the_conversation(): void
+    {
+        $this->freezeSecond();
+        $learner = $this->learnerWithAiConfigured();
+        $conversation = $this->openConversation($learner);
+        $tutorMessage = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor]);
+        Sanctum::actingAs($learner);
+        $material = $this->material('Gait cycle', flashcards: 2, withQuestions: true);
+        // The schema can't enforce one right answer, so a multiple choice question with two is left out.
+        $brokenQuestion = $material['questions'][0];
+        $brokenQuestion['options'][1]['is_correct'] = true;
+        $material['questions'][] = $brokenQuestion;
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$material]])]);
+
+        // The sync queue in tests runs the job straight after the save.
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft(subtopics: [
+            ['title' => 'Gait cycle', 'content' => 'Stance and swing phases.'],
+        ]))->assertCreated();
+
         $flashcard = Flashcard::first();
+        $this->assertSame(2, Flashcard::count());
         $this->assertSame(ContentOrigin::Ai, $flashcard->origin);
         $this->assertSame($tutorMessage->id, $flashcard->source_message_id);
         $this->assertTrue($flashcard->due_at->equalTo(now()));
@@ -65,10 +96,7 @@ class SaveConversationTest extends TestCase
         $this->assertSame([1, 2, 3], $multipleChoice->options()->orderBy('position')->pluck('position')->all());
         $this->assertNull($multipleChoice->model_answer);
         $this->assertSame('Stance comes first.', Question::where('type', QuestionType::Open)->sole()->model_answer);
-
-        $conversation->refresh();
-        $this->assertTrue($conversation->topic->is($topic));
-        $this->assertTrue($conversation->isSaved());
+        $this->assertSame(GenerationStatus::Ready, Subtopic::sole()->generation_status);
 
         Http::assertSent(function (Request $request) use ($learner): bool {
             $input = json_decode($request['messages'][1]['content'], true);
@@ -81,19 +109,15 @@ class SaveConversationTest extends TestCase
         });
     }
 
-    public function test_saving_a_continued_topic_adds_to_it_and_only_generates_what_is_new(): void
+    public function test_saving_a_continued_topic_adds_to_it_and_only_queues_what_is_new(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Old goal']);
         $changedSubtopic = Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance phase.', 'position' => 1]);
-        Subtopic::factory()->for($topic)->create(['title' => 'Ground reaction force', 'content' => 'Unchanged notes.', 'position' => 2]);
-        Flashcard::factory()->for($learner)->for($topic)->for($changedSubtopic)->create(['front' => 'What is the stance phase?']);
+        $unchangedSubtopic = Subtopic::factory()->for($topic)->create(['title' => 'Ground reaction force', 'content' => 'Unchanged notes.', 'position' => 2]);
         $conversation = $this->openConversation($learner, $topic);
         Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [
-            $this->material('Gait cycle', flashcards: 1),
-            $this->material('Cadence', flashcards: 2),
-        ]])]);
 
         $response = $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft(subtopics: [
             ['title' => 'gait cycle', 'content' => 'Stance phase. Swing phase.'],
@@ -101,77 +125,35 @@ class SaveConversationTest extends TestCase
             ['title' => 'Cadence', 'content' => 'Steps per minute.'],
         ]));
 
-        $response->assertCreated()->assertJsonPath('added', ['subtopics' => 1, 'flashcards' => 3, 'questions' => 0]);
+        $response->assertCreated()->assertJsonPath('added', ['subtopics' => 1]);
 
         $this->assertSame(1, Topic::count());
         $this->assertSame('Explain the running gait to my athletes', $topic->fresh()->goal);
         $this->assertSame(['Gait cycle', 'Ground reaction force', 'Cadence'], $topic->subtopics()->orderBy('position')->pluck('title')->all());
         $this->assertSame('Stance phase. Swing phase.', $changedSubtopic->fresh()->content);
-        $this->assertSame(2, $changedSubtopic->flashcards()->count());
+        $this->assertSame(GenerationStatus::Ready, $unchangedSubtopic->fresh()->generation_status);
 
-        Http::assertSent(function (Request $request): bool {
-            $subtopics = json_decode($request['messages'][1]['content'], true)['subtopics'];
-
-            return array_column($subtopics, 'title') === ['gait cycle', 'Cadence']
-                && $subtopics[0]['existing_items'] === ['What is the stance phase?'];
-        });
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 2);
+        Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($changedSubtopic));
+        Queue::assertNotPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($unchangedSubtopic));
     }
 
-    public function test_saving_without_new_notes_needs_no_ai_call(): void
+    public function test_saving_without_new_notes_queues_nothing(): void
     {
+        Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);
         $conversation = $this->openConversation($learner, $topic);
         Sanctum::actingAs($learner);
-        Http::fake();
 
         $response = $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft(subtopics: [
             ['title' => 'Gait cycle', 'content' => 'Stance and swing phases.'],
         ]));
 
-        $response->assertCreated()->assertJsonPath('added', ['subtopics' => 0, 'flashcards' => 0, 'questions' => 0]);
+        $response->assertCreated()->assertJsonPath('added', ['subtopics' => 0]);
         $this->assertTrue($conversation->fresh()->isSaved());
-        Http::assertNothingSent();
-    }
-
-    public function test_multiple_choice_questions_without_exactly_one_right_answer_are_left_out(): void
-    {
-        $learner = $this->learnerWithAiConfigured();
-        $conversation = $this->openConversation($learner);
-        Sanctum::actingAs($learner);
-        $material = $this->material('Gait cycle', flashcards: 0, withQuestions: true);
-        $material['questions'][0]['options'][1]['is_correct'] = true;
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$material]])]);
-
-        $response = $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft(subtopics: [
-            ['title' => 'Gait cycle', 'content' => 'Stance and swing phases.'],
-        ]));
-
-        $response->assertCreated()->assertJsonPath('added.questions', 1);
-        $this->assertSame(QuestionType::Open, Question::sole()->type);
-    }
-
-    public function test_nothing_is_saved_when_generating_fails(): void
-    {
-        $learner = $this->learnerWithAiConfigured();
-        $conversation = $this->openConversation($learner);
-        Sanctum::actingAs($learner);
-
-        foreach ([
-            $this->openAiError(500, 'server_error'),
-            $this->openAiAnswer(['subtopics' => [$this->material('Gait cycle', flashcards: 1)]]),
-        ] as $failedGeneration) {
-            Http::fake(['api.openai.com/*' => $failedGeneration]);
-
-            $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft())
-                ->assertServiceUnavailable()
-                ->assertJsonPath('message', "The tutor can't answer right now. Try again in a moment.");
-        }
-
-        $this->assertDatabaseCount('topics', 0);
-        $this->assertDatabaseCount('flashcards', 0);
-        $this->assertFalse($conversation->fresh()->isSaved());
+        Queue::assertNothingPushed();
     }
 
     public function test_a_topic_needs_a_complete_smart_goal_and_a_subtopic(): void

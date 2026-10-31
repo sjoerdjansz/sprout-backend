@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Turns subtopics into flashcards and questions with the level's stronger generation model.
- * Stores nothing; SaveConversationToKnowledgeMap saves the result.
+ * Stores nothing; the GenerateSubtopicMaterial job saves the result.
  */
 class GeneratePracticeMaterial
 {

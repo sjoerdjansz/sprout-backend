@@ -30,6 +30,7 @@ class TopicResource extends JsonResource
             'subtopics' => $this->whenLoaded('subtopics', fn (): array => $this->subtopics->sortBy('position')->map(fn ($subtopic): array => [
                 'id' => $subtopic->id,
                 'title' => $subtopic->title,
+                'generation_status' => $subtopic->generation_status,
             ])->values()->all()),
             'created_at' => $this->created_at,
         ];

@@ -7,9 +7,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * The result of saving a conversation: the topic, and what this save added to it.
+ * The result of saving a conversation: the topic, and how many subtopics this save added. Their flashcards
+ * and questions are made in the background, so they aren't counted here.
  *
- * @property array{topic: Topic, added_subtopics: int, added_flashcards: int, added_questions: int} $resource
+ * @property array{topic: Topic, added_subtopics: int} $resource
  */
 class SavedTopicResource extends JsonResource
 {
@@ -24,8 +25,6 @@ class SavedTopicResource extends JsonResource
             'topic' => new TopicResource($this->resource['topic']->load('subtopics')),
             'added' => [
                 'subtopics' => $this->resource['added_subtopics'],
-                'flashcards' => $this->resource['added_flashcards'],
-                'questions' => $this->resource['added_questions'],
             ],
         ];
     }
