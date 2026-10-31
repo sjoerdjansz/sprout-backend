@@ -60,16 +60,6 @@ class User extends Authenticatable
     }
 
     /**
-     * Unused since 2026-10-31: Sprout uses its own AI key (ResolveAiKey). Kept until the table is dropped.
-     *
-     * @return HasMany<AiCredential, $this>
-     */
-    public function aiCredentials(): HasMany
-    {
-        return $this->hasMany(AiCredential::class);
-    }
-
-    /**
      * @return HasMany<Category, $this>
      */
     public function categories(): HasMany
