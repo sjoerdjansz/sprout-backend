@@ -155,13 +155,48 @@ class SplitSourcesOverSubtopicsTest extends TestCase
         );
     }
 
-    public function test_a_long_paragraph_is_cut_into_blocks_at_line_breaks(): void
+    public function test_lines_wrapped_by_pdftotext_are_joined_into_paragraphs_and_headings_stay_apart(): void
+    {
+        $pdfText = "Running Biomechanics - Lecture 3\n"
+            ."Course information: the exam is on 12 December in room B204. Office hours are on\n"
+            ."Tuesdays from 14:00 to 15:00.\n"
+            ."Cadence\n"
+            ."Cadence is the number of steps a runner takes per minute. Most recreational\n"
+            ."runners land between 160 and 170 steps per minute.\n"
+            ."\fA higher cadence usually means shorter steps.\n";
+
+        $blocks = app(SplitMaterialOverSubtopics::class)->blocks($pdfText);
+
+        $this->assertSame([
+            1 => 'Running Biomechanics - Lecture 3',
+            2 => 'Course information: the exam is on 12 December in room B204. Office hours are on Tuesdays from 14:00 to 15:00.',
+            3 => 'Cadence',
+            4 => 'Cadence is the number of steps a runner takes per minute. Most recreational runners land between 160 and 170 steps per minute.',
+            5 => 'A higher cadence usually means shorter steps.',
+        ], $blocks);
+    }
+
+    public function test_markdown_headings_and_list_items_are_blocks_of_their_own(): void
+    {
+        $markdown = "# Cadence\n- Steps per minute, usually between 160 and 180 for most runners\n- Higher cadence lowers braking forces at each foot strike\n\nSome closing words that run on and on without a full stop at the end of this line\nand end here.";
+
+        $blocks = app(SplitMaterialOverSubtopics::class)->blocks($markdown);
+
+        $this->assertSame([
+            1 => '# Cadence',
+            2 => '- Steps per minute, usually between 160 and 180 for most runners',
+            3 => '- Higher cadence lowers braking forces at each foot strike',
+            4 => 'Some closing words that run on and on without a full stop at the end of this line and end here.',
+        ], $blocks);
+    }
+
+    public function test_a_paragraph_without_sentence_ends_is_cut_at_1500_characters(): void
     {
         $longLine = str_repeat('a', 900);
 
-        $blocks = app(SplitMaterialOverSubtopics::class)->blocks("Short paragraph.\r\n\r\n{$longLine}\n{$longLine}\n\n \n\nLast.");
+        $blocks = app(SplitMaterialOverSubtopics::class)->blocks("{$longLine}\n{$longLine}\n{$longLine}");
 
-        $this->assertSame([1 => 'Short paragraph.', 2 => $longLine, 3 => $longLine, 4 => 'Last.'], $blocks);
+        $this->assertSame([1 => "{$longLine} {$longLine}", 2 => $longLine], $blocks);
     }
 
     public function test_notes_never_grow_past_10000_characters(): void

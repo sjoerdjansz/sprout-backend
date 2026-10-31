@@ -19,8 +19,11 @@ use Illuminate\Support\Str;
  */
 class SplitMaterialOverSubtopics
 {
-    /** Longer blocks are cut at line breaks, for text (often from pdftotext) without blank lines between paragraphs. */
+    /** A paragraph without a sentence end in sight is cut here, so one block never holds a whole file. */
     private const MAX_BLOCK_CHARACTERS = 1_500;
+
+    /** pdftotext fills lines to about 80 characters, so a shorter line ends a paragraph or is a heading. */
+    private const SHORT_LINE_CHARACTERS = 50;
 
     public function __construct(
         private ResolveAiKey $resolveAiKey,
@@ -72,33 +75,58 @@ class SplitMaterialOverSubtopics
     }
 
     /**
-     * The file's text as blocks numbered from 1, in order.
+     * The file's text as blocks numbered from 1, in order: its paragraphs, headings and list items.
+     * pdftotext wraps lines at the page width and leaves no blank line between paragraphs, so wrapped lines
+     * are joined again until a line ends a sentence, is short (a heading or the last line of a paragraph),
+     * or is followed by a blank line.
      *
      * @return array<int, string>
      */
     public function blocks(string $text): array
     {
         $blocks = [];
+        $currentBlock = '';
 
-        foreach (preg_split('/\R\s*\R/u', $text) as $paragraph) {
-            $paragraph = trim($paragraph);
+        foreach (preg_split('/\R|\f/u', $text) as $line) {
+            $line = trim($line);
 
-            $parts = Str::length($paragraph) > self::MAX_BLOCK_CHARACTERS
-                ? preg_split('/\R/u', $paragraph)
-                : [$paragraph];
+            if ($line === '' || ($currentBlock !== '' && $this->startsBlock($line))) {
+                $blocks[] = $currentBlock;
+                $currentBlock = '';
+            }
 
-            foreach ($parts as $part) {
-                if (trim($part) !== '') {
-                    $blocks[] = trim($part);
-                }
+            if ($line === '') {
+                continue;
+            }
+
+            $currentBlock = $currentBlock === '' ? $line : $currentBlock.' '.$line;
+
+            if ($this->endsBlock($line) || Str::length($currentBlock) >= self::MAX_BLOCK_CHARACTERS) {
+                $blocks[] = $currentBlock;
+                $currentBlock = '';
             }
         }
+
+        $blocks = array_values(array_filter([...$blocks, $currentBlock], fn (string $block): bool => $block !== ''));
 
         if ($blocks === []) {
             return [];
         }
 
         return array_combine(range(1, count($blocks)), $blocks);
+    }
+
+    /**
+     * A Markdown heading or list item never continues the line before it.
+     */
+    private function startsBlock(string $line): bool
+    {
+        return preg_match('/^(#{1,6}\s|[-*+]\s|\d+[.)]\s)/u', $line) === 1;
+    }
+
+    private function endsBlock(string $line): bool
+    {
+        return preg_match('/[.!?:]["\'”’)]?$/u', $line) === 1 || Str::length($line) < self::SHORT_LINE_CHARACTERS;
     }
 
     /**
