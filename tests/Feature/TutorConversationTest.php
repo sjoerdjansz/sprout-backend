@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AiLevel;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
+use App\Models\AiCredential;
 use App\Models\Flashcard;
 use App\Models\Message;
 use App\Models\StudySession;
@@ -16,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
@@ -33,7 +35,7 @@ class TutorConversationTest extends TestCase
 
     public function test_first_message_starts_a_conversation_with_the_tutors_reply(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
 
@@ -59,9 +61,9 @@ class TutorConversationTest extends TestCase
         $this->assertSame(150, $tutorMessage->output_tokens);
     }
 
-    public function test_the_tutor_is_asked_with_the_learners_key_level_and_profile(): void
+    public function test_the_tutor_is_asked_with_sprouts_key_and_the_learners_level_and_profile(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $learner->settings->update(['ai_level' => AiLevel::Low]);
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
@@ -71,7 +73,7 @@ class TutorConversationTest extends TestCase
         Http::assertSent(function (Request $request) use ($learner): bool {
             $context = json_decode(substr($request['messages'][1]['content'], strlen('Context: ')), true);
 
-            return $request->hasHeader('Authorization', 'Bearer '.self::LEARNER_API_KEY)
+            return $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY)
                 && $request['model'] === config('ai.levels.low.chat_model')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
@@ -83,7 +85,7 @@ class TutorConversationTest extends TestCase
 
     public function test_continuing_a_topic_starts_from_its_saved_goal_and_subtopics(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create([
             'title' => 'Knee injuries',
             'goal' => 'Explain the common knee injuries to a client',
@@ -129,7 +131,7 @@ class TutorConversationTest extends TestCase
 
     public function test_a_conversation_cannot_continue_someone_elses_topic(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $someoneElsesTopic = Topic::factory()->create();
         Sanctum::actingAs($learner);
         Http::fake();
@@ -143,7 +145,7 @@ class TutorConversationTest extends TestCase
 
     public function test_a_message_must_be_filled_in_and_not_too_long(): void
     {
-        Sanctum::actingAs($this->learnerWithKey());
+        Sanctum::actingAs($this->learnerWithAiConfigured());
         Http::fake();
 
         $this->postJson('/api/v1/conversations', ['message' => '   '])
@@ -159,7 +161,7 @@ class TutorConversationTest extends TestCase
 
     public function test_a_message_continues_the_conversation_and_updates_the_draft(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         Sanctum::actingAs($learner);
         $updatedDraft = [
@@ -182,7 +184,7 @@ class TutorConversationTest extends TestCase
 
     public function test_only_the_last_ten_messages_are_sent_to_the_tutor(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         Message::factory()->count(12)->for($conversation)->sequence(fn ($sequence): array => [
             'role' => MessageRole::User,
@@ -206,7 +208,7 @@ class TutorConversationTest extends TestCase
 
     public function test_a_saved_conversation_is_read_only(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $savedConversation = StudySession::factory()->for($learner)->create(['ended_at' => now()]);
         Sanctum::actingAs($learner);
         Http::fake();
@@ -221,7 +223,7 @@ class TutorConversationTest extends TestCase
     public function test_someone_elses_conversation_is_not_found(): void
     {
         $someoneElsesConversation = $this->openConversation(User::factory()->create());
-        Sanctum::actingAs($this->learnerWithKey());
+        Sanctum::actingAs($this->learnerWithAiConfigured());
         Http::fake();
 
         $this->getJson("/api/v1/conversations/{$someoneElsesConversation->id}")->assertNotFound();
@@ -229,58 +231,51 @@ class TutorConversationTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_a_learner_without_a_key_is_asked_to_connect_one(): void
+    public function test_sprouts_own_key_is_used_even_when_the_learner_once_connected_a_key(): void
     {
-        $learner = User::factory()->create();
+        $learner = $this->learnerWithAiConfigured();
+        AiCredential::factory()->for($learner)->create(['encrypted_api_key' => 'sk-old-learner-key']);
+        Sanctum::actingAs($learner);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertCreated();
+
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY));
+    }
+
+    public function test_without_a_configured_key_the_tutor_is_unavailable_and_nothing_is_sent(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        config(['services.openai.key' => null]);
         Sanctum::actingAs($learner);
         Http::fake();
 
         $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
 
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['ai_key' => 'Connect your AI key to start learning.']);
+        $response->assertServiceUnavailable()
+            ->assertExactJson(['message' => "The tutor can't answer right now. Try again in a moment."]);
         $this->assertDatabaseCount('study_sessions', 0);
         Http::assertNothingSent();
     }
 
-    public function test_locally_the_developers_key_is_used_for_learners_without_one(): void
+    public function test_a_rejected_key_or_missing_credit_is_logged_and_the_learner_can_try_again(): void
     {
-        $this->app['env'] = 'local';
-        config(['services.openai.key' => 'sk-developer-key']);
-        Sanctum::actingAs(User::factory()->create());
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
+        Sanctum::actingAs($this->learnerWithAiConfigured());
+        Log::spy();
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push(['error' => ['message' => 'Incorrect API key provided.', 'type' => 'invalid_request_error']], 401)
+            ->push(['error' => ['message' => 'You have no credits remaining.', 'type' => 'insufficient_quota']], 429)]);
 
-        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertCreated();
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable();
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable();
 
-        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer sk-developer-key'));
-    }
-
-    public function test_a_rejected_key_tells_the_learner_to_check_it_and_stores_nothing(): void
-    {
-        Sanctum::actingAs($this->learnerWithKey());
-        Http::fake(['api.openai.com/*' => $this->openAiError(401, 'invalid_request_error', 'Incorrect API key provided.')]);
-
-        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
-
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['ai_key' => "Your AI key wasn't accepted. Check it in your settings and try again."]);
         $this->assertDatabaseCount('study_sessions', 0);
-    }
-
-    public function test_a_key_without_credit_tells_the_learner_to_top_it_up(): void
-    {
-        Sanctum::actingAs($this->learnerWithKey());
-        Http::fake(['api.openai.com/*' => $this->openAiError(429, 'insufficient_quota', 'You have no credits remaining.')]);
-
-        $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
-
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors(['ai_key' => 'Your AI account has run out of credit. Top it up with your AI provider and try again.']);
+        Log::shouldHaveReceived('error')->twice();
     }
 
     public function test_provider_trouble_asks_to_try_again_and_stores_nothing(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         Sanctum::actingAs($learner);
         $tryAgain = ['message' => "The tutor can't answer right now. Try again in a moment."];
@@ -303,7 +298,7 @@ class TutorConversationTest extends TestCase
 
     public function test_the_chat_history_lists_the_learners_conversations_with_the_latest_first(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Photosynthesis']);
         $older = StudySession::factory()->for($learner)->for($topic)->create(['updated_at' => now()->subDays(2)]);
         $newer = $this->openConversation($learner);
@@ -327,7 +322,7 @@ class TutorConversationTest extends TestCase
 
     public function test_the_conversations_about_one_topic_come_with_a_message_count_and_a_preview(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $conversation = StudySession::factory()->for($learner)->for($topic)->create();
         $messages = Message::factory()->for($conversation)->count(4)->create();
@@ -351,7 +346,7 @@ class TutorConversationTest extends TestCase
 
     public function test_deleting_a_conversation_keeps_the_cards_made_from_it(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $conversation = StudySession::factory()->for($learner)->for($topic)->create();
         $message = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor]);
@@ -370,7 +365,7 @@ class TutorConversationTest extends TestCase
 
     public function test_opening_a_conversation_shows_its_messages_in_order(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         $first = Message::factory()->for($conversation)->create(['role' => MessageRole::User, 'content' => 'First']);
         $second = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor, 'content' => 'Second']);
@@ -386,7 +381,7 @@ class TutorConversationTest extends TestCase
 
     public function test_sending_messages_is_rate_limited_per_learner(): void
     {
-        Sanctum::actingAs($this->learnerWithKey());
+        Sanctum::actingAs($this->learnerWithAiConfigured());
         Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
 
         for ($attempt = 1; $attempt <= 10; $attempt++) {

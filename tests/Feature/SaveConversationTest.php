@@ -28,7 +28,7 @@ class SaveConversationTest extends TestCase
     public function test_saving_creates_the_topic_with_its_goal_subtopics_and_practice_material(): void
     {
         $this->freezeSecond();
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         $tutorMessage = Message::factory()->for($conversation)->create(['role' => MessageRole::Tutor]);
         Sanctum::actingAs($learner);
@@ -82,7 +82,7 @@ class SaveConversationTest extends TestCase
 
     public function test_saving_a_continued_topic_adds_to_it_and_only_generates_what_is_new(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Old goal']);
         $changedSubtopic = Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance phase.', 'position' => 1]);
         Subtopic::factory()->for($topic)->create(['title' => 'Ground reaction force', 'content' => 'Unchanged notes.', 'position' => 2]);
@@ -118,7 +118,7 @@ class SaveConversationTest extends TestCase
 
     public function test_saving_without_new_notes_needs_no_ai_call(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);
         $conversation = $this->openConversation($learner, $topic);
@@ -136,7 +136,7 @@ class SaveConversationTest extends TestCase
 
     public function test_multiple_choice_questions_without_exactly_one_right_answer_are_left_out(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         Sanctum::actingAs($learner);
         $material = $this->material('Gait cycle', flashcards: 0, withQuestions: true);
@@ -153,7 +153,7 @@ class SaveConversationTest extends TestCase
 
     public function test_nothing_is_saved_when_generating_fails(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         Sanctum::actingAs($learner);
 
@@ -175,7 +175,7 @@ class SaveConversationTest extends TestCase
 
     public function test_a_topic_needs_a_complete_smart_goal_and_a_subtopic(): void
     {
-        $conversation = $this->openConversation($learner = $this->learnerWithKey());
+        $conversation = $this->openConversation($learner = $this->learnerWithAiConfigured());
         Sanctum::actingAs($learner);
         Http::fake();
 
@@ -203,7 +203,7 @@ class SaveConversationTest extends TestCase
 
     public function test_a_saved_conversation_cannot_be_saved_again(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $savedConversation = StudySession::factory()->for($learner)->create(['ended_at' => now()]);
         Sanctum::actingAs($learner);
         Http::fake();
@@ -217,7 +217,7 @@ class SaveConversationTest extends TestCase
     public function test_someone_elses_conversation_cannot_be_saved(): void
     {
         $someoneElsesConversation = $this->openConversation(User::factory()->create());
-        Sanctum::actingAs($this->learnerWithKey());
+        Sanctum::actingAs($this->learnerWithAiConfigured());
         Http::fake();
 
         $this->postJson("/api/v1/conversations/{$someoneElsesConversation->id}/save", $this->reviewedDraft())->assertNotFound();
@@ -226,7 +226,7 @@ class SaveConversationTest extends TestCase
 
     public function test_a_new_topic_goes_in_the_category_the_learner_picked_or_named(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $science = Category::factory()->for($learner)->create(['name' => 'Science']);
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Gait cycle', flashcards: 1)]])]);
@@ -253,7 +253,7 @@ class SaveConversationTest extends TestCase
 
     public function test_a_new_topic_needs_a_category_of_your_own(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $conversation = $this->openConversation($learner);
         $someoneElsesCategory = Category::factory()->create();
         Sanctum::actingAs($learner);
@@ -277,7 +277,7 @@ class SaveConversationTest extends TestCase
 
     public function test_a_continued_topic_keeps_its_category_unless_another_is_picked(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $originalCategory = $topic->category;
         Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);

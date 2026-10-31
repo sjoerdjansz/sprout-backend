@@ -106,7 +106,7 @@ class SubtopicPageTest extends TestCase
 
     public function test_generating_adds_what_the_existing_cards_and_questions_dont_cover_yet(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Biology', 'goal' => 'Pass the exam']);
         $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Photosynthesis', 'content' => 'Light, water and CO2 become sugar.']);
         Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['front' => 'What does a plant need?']);
@@ -140,7 +140,7 @@ class SubtopicPageTest extends TestCase
 
     public function test_generating_needs_notes_to_generate_from(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => null]);
         Sanctum::actingAs($learner);
         Http::fake();
@@ -154,7 +154,7 @@ class SubtopicPageTest extends TestCase
 
     public function test_nothing_is_added_when_generating_fails(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => 'Notes.']);
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);

@@ -17,7 +17,6 @@ class DatabaseSeederTest extends TestCase
     public function test_seeder_creates_an_active_and_a_new_learner(): void
     {
         Storage::fake('local');
-        config(['services.openai.key' => 'sk-test-key-ending-in-abcd']);
 
         $this->seed(DatabaseSeeder::class);
 
@@ -26,7 +25,6 @@ class DatabaseSeederTest extends TestCase
         $this->assertTrue($ada->flashcards()->where('due_at', '<=', now())->exists(), 'Ada should have cards due');
         $this->assertTrue($ada->flashcards()->where('due_at', '>', now()->endOfDay())->exists(), 'Ada should have cards scheduled later');
         $this->assertTrue($ada->dailyActivities()->whereDate('activity_date', today())->exists(), 'Ada\'s streak should include today');
-        $this->assertSame('abcd', $ada->aiCredentials()->sole()->key_last_four);
         Storage::disk('local')->assertExists('materials/seed/photosynthesis-notes.txt');
         $this->assertSame(CreateStarterCategories::NAMES, $ada->categories()->orderBy('id')->pluck('name')->all());
         $this->assertSame(['Science', 'Languages'], $ada->topics()->orderBy('id')->with('category')->get()->pluck('category.name')->all());
@@ -34,7 +32,6 @@ class DatabaseSeederTest extends TestCase
         $sam = User::where('email', 'sam@sprout.test')->sole();
         $this->assertNotNull($sam->settings);
         $this->assertSame(0, $sam->topics()->count());
-        $this->assertSame(0, $sam->aiCredentials()->count());
         $this->assertSame(CreateStarterCategories::NAMES, $sam->categories()->orderBy('id')->pluck('name')->all());
     }
 
@@ -51,15 +48,5 @@ class DatabaseSeederTest extends TestCase
         $this->assertTrue($subtopics->contains('slipping', true), 'Ada should have a slipping subtopic');
         $this->assertTrue($subtopics->contains(fn (array $subtopic): bool => $subtopic['facets']['cards']['holding']), 'Ada should have a facet that holds');
         $this->assertGreaterThan(0, $subtopics->sum('due_cards'), 'Ada should have cards due');
-    }
-
-    public function test_active_learner_gets_no_ai_key_when_none_is_configured(): void
-    {
-        Storage::fake('local');
-        config(['services.openai.key' => null]);
-
-        $this->seed(DatabaseSeeder::class);
-
-        $this->assertSame(0, User::where('email', 'ada@sprout.test')->sole()->aiCredentials()->count());
     }
 }

@@ -35,7 +35,7 @@ class AskTutor
         $level = $learner->settings?->ai_level ?? AiLevel::Medium;
 
         $completion = $this->requestAiCompletion->handle(
-            apiKey: $this->resolveAiKey->handle($learner),
+            apiKey: $this->resolveAiKey->handle(),
             model: $level->chatModel(),
             instructions: file_get_contents(resource_path('prompts/tutor.md')),
             messages: [

@@ -22,7 +22,7 @@ class SubtopicsTest extends TestCase
 
     public function test_adding_a_subtopic_with_notes_generates_cards_and_questions_from_them(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Coach better']);
         Subtopic::factory()->for($topic)->create(['position' => 4]);
         Sanctum::actingAs($learner);
@@ -106,7 +106,7 @@ class SubtopicsTest extends TestCase
 
     public function test_nothing_is_added_when_generating_fails(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiError(500, 'server_error')]);
@@ -120,7 +120,7 @@ class SubtopicsTest extends TestCase
 
     public function test_changed_notes_get_material_for_what_is_new_and_unchanged_notes_get_nothing(): void
     {
-        $learner = $this->learnerWithKey();
+        $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Cadence', 'content' => 'Steps per minute.']);
         Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['front' => 'What is cadence?']);

@@ -33,7 +33,7 @@ class GeneratePracticeMaterial
         $level = $learner->settings?->ai_level ?? AiLevel::Medium;
 
         $completion = $this->requestAiCompletion->handle(
-            apiKey: $this->resolveAiKey->handle($learner),
+            apiKey: $this->resolveAiKey->handle(),
             model: $level->generationModel(),
             instructions: file_get_contents(resource_path('prompts/practice-material.md')),
             messages: [

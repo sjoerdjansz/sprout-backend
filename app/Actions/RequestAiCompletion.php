@@ -77,20 +77,19 @@ class RequestAiCompletion
             return;
         }
 
-        if ($response->status() === 401) {
-            throw AiRequestFailed::keyRejected();
-        }
-
-        // OpenAI uses 429 both for "slow down" and for an account without credit.
-        if ($response->status() === 429 && $response->json('error.type') === 'insufficient_quota') {
-            throw AiRequestFailed::outOfCredit();
-        }
-
-        Log::warning('The AI provider answered with an error.', [
+        $context = [
             'model' => $model,
             'status' => $response->status(),
             'error' => $response->json('error.message'),
-        ]);
+        ];
+
+        // A rejected key or an account without credit (OpenAI uses 429 for that too) breaks the AI for every
+        // learner until someone fixes Sprout's key, so it is an error rather than a warning.
+        if ($response->status() === 401 || $response->json('error.type') === 'insufficient_quota') {
+            Log::error('The AI provider rejected Sprout\'s key or the account has no credit.', $context);
+        } else {
+            Log::warning('The AI provider answered with an error.', $context);
+        }
 
         throw AiRequestFailed::unavailable();
     }

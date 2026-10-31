@@ -6,45 +6,26 @@ use Illuminate\Http\JsonResponse;
 use RuntimeException;
 
 /**
- * The tutor couldn't get an answer from the AI provider. Rendered with a message the learner can act on:
- * a key problem is a 422 on `ai_key` (fix the key), anything else a 503 (try again).
+ * The tutor couldn't get an answer from the AI provider. Sprout uses its own key, so whatever the cause
+ * (a key problem, no credit, the provider being down), the learner can only try again: always a 503.
+ * The cause is logged where it is detected.
+ *
+ * Changed 2026-10-31: key problems used to be a 422 on `ai_key`, when learners brought their own key.
  */
 class AiRequestFailed extends RuntimeException
 {
-    private function __construct(string $message, private readonly bool $isKeyProblem)
+    private function __construct(string $message)
     {
         parent::__construct($message);
     }
 
-    public static function missingKey(): self
-    {
-        return new self('Connect your AI key to start learning.', isKeyProblem: true);
-    }
-
-    public static function keyRejected(): self
-    {
-        return new self("Your AI key wasn't accepted. Check it in your settings and try again.", isKeyProblem: true);
-    }
-
-    public static function outOfCredit(): self
-    {
-        return new self('Your AI account has run out of credit. Top it up with your AI provider and try again.', isKeyProblem: true);
-    }
-
     public static function unavailable(): self
     {
-        return new self("The tutor can't answer right now. Try again in a moment.", isKeyProblem: false);
+        return new self("The tutor can't answer right now. Try again in a moment.");
     }
 
     public function render(): JsonResponse
     {
-        if ($this->isKeyProblem) {
-            return response()->json([
-                'message' => $this->getMessage(),
-                'errors' => ['ai_key' => [$this->getMessage()]],
-            ], 422);
-        }
-
         return response()->json(['message' => $this->getMessage()], 503);
     }
 }
