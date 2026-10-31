@@ -6,6 +6,7 @@ use App\Enums\ContentOrigin;
 use App\Enums\GenerationStatus;
 use App\Enums\MessageRole;
 use App\Enums\QuestionType;
+use App\Enums\SourceType;
 use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Category;
 use App\Models\Flashcard;
@@ -55,7 +56,9 @@ class SaveConversationTest extends TestCase
         $topic = Topic::sole();
         $this->assertTrue($topic->user->is($learner));
         $this->assertSame([1, 2], $topic->subtopics()->orderBy('position')->pluck('position')->all());
-        $this->assertSame('Stance and swing phases.', $topic->subtopics()->where('title', 'Gait cycle')->value('content'));
+        $gaitCycle = $topic->subtopics()->where('title', 'Gait cycle')->sole();
+        $this->assertSame('Stance and swing phases.', $gaitCycle->sourceContent(SourceType::Tutor));
+        $this->assertNull($gaitCycle->sourceContent(SourceType::Own));
 
         $conversation->refresh();
         $this->assertTrue($conversation->topic->is($topic));
@@ -106,7 +109,7 @@ class SaveConversationTest extends TestCase
                 && $request['reasoning_effort'] === config('ai.levels.medium.generation_reasoning_effort')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $input['topic'] === ['title' => 'Biomechanics of running', 'goal' => 'Explain the running gait to my athletes']
-                && $input['subtopics'][0] === ['title' => 'Gait cycle', 'content' => 'Stance and swing phases.', 'existing_items' => []];
+                && $input['subtopics'][0] === ['title' => 'Gait cycle', 'content' => "## From the chat\n\nStance and swing phases.", 'existing_items' => []];
         });
     }
 
@@ -115,8 +118,8 @@ class SaveConversationTest extends TestCase
         Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Old goal']);
-        $changedSubtopic = Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance phase.', 'position' => 1]);
-        $unchangedSubtopic = Subtopic::factory()->for($topic)->create(['title' => 'Ground reaction force', 'content' => 'Unchanged notes.', 'position' => 2]);
+        $changedSubtopic = Subtopic::factory()->for($topic)->withTutorNotes('Stance phase.')->create(['title' => 'Gait cycle', 'position' => 1]);
+        $unchangedSubtopic = Subtopic::factory()->for($topic)->withTutorNotes('Unchanged notes.')->create(['title' => 'Ground reaction force', 'position' => 2]);
         $conversation = $this->openConversation($learner, $topic);
         Sanctum::actingAs($learner);
 
@@ -131,7 +134,8 @@ class SaveConversationTest extends TestCase
         $this->assertSame(1, Topic::count());
         $this->assertSame('Explain the running gait to my athletes', $topic->fresh()->goal);
         $this->assertSame(['Gait cycle', 'Ground reaction force', 'Cadence'], $topic->subtopics()->orderBy('position')->pluck('title')->all());
-        $this->assertSame('Stance phase. Swing phase.', $changedSubtopic->fresh()->content);
+        $this->assertSame('Stance phase. Swing phase.', $changedSubtopic->fresh()->sourceContent(SourceType::Tutor));
+        $this->assertSame(1, $changedSubtopic->sources()->count());
         $this->assertSame(GenerationStatus::Ready, $unchangedSubtopic->fresh()->generation_status);
 
         Queue::assertPushed(GenerateSubtopicMaterial::class, 2);
@@ -139,12 +143,37 @@ class SaveConversationTest extends TestCase
         Queue::assertNotPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($unchangedSubtopic));
     }
 
+    public function test_saving_writes_the_tutors_notes_and_leaves_the_learners_own_notes_alone(): void
+    {
+        Queue::fake();
+        $learner = $this->learnerWithAiConfigured();
+        $topic = Topic::factory()->for($learner)->create();
+        $withOwnNotes = Subtopic::factory()->for($topic)->withOwnNotes('My coach says 170.')->create(['title' => 'Cadence', 'position' => 1]);
+        $onlyOwnNotes = Subtopic::factory()->for($topic)->withOwnNotes('Stance and swing.')->create(['title' => 'Gait cycle', 'position' => 2]);
+        $conversation = $this->openConversation($learner, $topic);
+        Sanctum::actingAs($learner);
+
+        // Continuing starts the draft from the learner's notes when the tutor has none; saved back as they were,
+        // they stay the learner's.
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft(subtopics: [
+            ['title' => 'Cadence', 'content' => 'Steps per minute.'],
+            ['title' => 'Gait cycle', 'content' => 'Stance and swing.'],
+        ]))->assertCreated();
+
+        $this->assertSame('Steps per minute.', $withOwnNotes->fresh()->sourceContent(SourceType::Tutor));
+        $this->assertSame('My coach says 170.', $withOwnNotes->fresh()->sourceContent(SourceType::Own));
+        $this->assertNull($onlyOwnNotes->fresh()->sourceContent(SourceType::Tutor));
+        $this->assertSame('Stance and swing.', $onlyOwnNotes->fresh()->sourceContent(SourceType::Own));
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
+        Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($withOwnNotes));
+    }
+
     public function test_saving_without_new_notes_queues_nothing(): void
     {
         Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
-        Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);
+        Subtopic::factory()->for($topic)->withTutorNotes('Stance and swing phases.')->create(['title' => 'Gait cycle']);
         $conversation = $this->openConversation($learner, $topic);
         Sanctum::actingAs($learner);
 
@@ -264,7 +293,7 @@ class SaveConversationTest extends TestCase
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
         $originalCategory = $topic->category;
-        Subtopic::factory()->for($topic)->create(['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']);
+        Subtopic::factory()->for($topic)->withTutorNotes('Stance and swing phases.')->create(['title' => 'Gait cycle']);
         Sanctum::actingAs($learner);
         Http::fake();
         $unchangedSubtopics = [['title' => 'Gait cycle', 'content' => 'Stance and swing phases.']];

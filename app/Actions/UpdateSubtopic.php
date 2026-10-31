@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\SourceType;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use Illuminate\Support\Facades\DB;
@@ -11,12 +12,14 @@ use Illuminate\Validation\ValidationException;
  * Edits a subtopic from the knowledge map, and can move it to another of the learner's topics. Its
  * cards and questions move along, so its progress does too. Changed notes get new material for what
  * they now cover, made in the background as when saving from the chat; unchanged notes get nothing new.
+ * The notes are the learner's own source (specs/subtopic-sources.md).
  */
 class UpdateSubtopic
 {
     public function __construct(
         private EnsureSubtopicFitsTopic $ensureSubtopicFitsTopic,
         private QueueMaterialGeneration $queueMaterialGeneration,
+        private SaveSubtopicSource $saveSubtopicSource,
         private SummariseSubtopicProgress $summariseSubtopicProgress,
     ) {}
 
@@ -29,9 +32,7 @@ class UpdateSubtopic
     {
         $this->ensureSubtopicFitsTopic->handle($targetTopic, $title, $subtopic);
 
-        $notesChanged = $notes !== null && trim($notes) !== trim((string) $subtopic->content);
-
-        DB::transaction(function () use ($subtopic, $targetTopic, $title, $description, $notes, $notesChanged): void {
+        DB::transaction(function () use ($subtopic, $targetTopic, $title, $description, $notes): void {
             $isMoving = $subtopic->topic_id !== $targetTopic->id;
 
             $subtopic->update([
@@ -48,7 +49,8 @@ class UpdateSubtopic
                 $subtopic->questions()->update(['topic_id' => $targetTopic->id]);
             }
 
-            if ($notesChanged) {
+            // The form's notes are the learner's own; the tutor's notes and file parts stay as they are.
+            if ($this->saveSubtopicSource->handle($subtopic, SourceType::Own, $notes)) {
                 $this->queueMaterialGeneration->handle($subtopic);
             }
         });

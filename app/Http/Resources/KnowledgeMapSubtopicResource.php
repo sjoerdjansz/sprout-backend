@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\SourceType;
 use App\Models\Subtopic;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -28,7 +29,8 @@ class KnowledgeMapSubtopicResource extends JsonResource
             'topic_id' => $subtopic->topic_id,
             'title' => $subtopic->title,
             'description' => $subtopic->description,
-            'notes' => $subtopic->content,
+            // Only the learner's own notes: the tutor's notes and file parts are sources of their own.
+            'notes' => $subtopic->sourceContent(SourceType::Own),
             'generation_status' => $subtopic->generation_status,
             'mastery' => $progress['mastery'],
             'due_cards' => $progress['due_cards'],

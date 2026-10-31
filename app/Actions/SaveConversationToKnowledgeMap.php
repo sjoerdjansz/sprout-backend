@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Enums\GenerationStatus;
 use App\Enums\MaterialStatus;
 use App\Enums\MessageRole;
+use App\Enums\SourceType;
 use App\Jobs\SplitSourcesOverSubtopics;
 use App\Models\Material;
 use App\Models\StudySession;
@@ -28,6 +29,7 @@ class SaveConversationToKnowledgeMap
     public function __construct(
         private QueueMaterialGeneration $queueMaterialGeneration,
         private ResolveCategory $resolveCategory,
+        private SaveSubtopicSource $saveSubtopicSource,
     ) {}
 
     /**
@@ -52,7 +54,7 @@ class SaveConversationToKnowledgeMap
             throw ValidationException::withMessages(['conversation' => SendMessageToTutor::ALREADY_SAVED_MESSAGE]);
         }
 
-        $topic = $conversation->topic?->load('category', 'subtopics');
+        $topic = $conversation->topic?->load('category', 'subtopics.sources');
         $hasCategory = $categoryId !== null || $categoryName !== null;
 
         // A continued topic keeps its category unless the learner picked another one.
@@ -60,9 +62,8 @@ class SaveConversationToKnowledgeMap
             throw ValidationException::withMessages(['category_id' => self::CATEGORY_REQUIRED_MESSAGE]);
         }
         $existingSubtopics = $topic?->subtopics->keyBy(fn (Subtopic $subtopic): string => Str::lower($subtopic->title)) ?? collect();
-        $keysNeedingMaterial = $this->keysNeedingMaterial($existingSubtopics, $subtopics);
 
-        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $keysNeedingMaterial, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $categoryId, $categoryName, $hasCategory): array {
+        return DB::transaction(function () use ($conversation, $topic, $existingSubtopics, $title, $goal, $goalDeadline, $goalRecallPercentage, $subtopics, $categoryId, $categoryName, $hasCategory): array {
             $topicAttributes = [
                 'title' => $title,
                 'goal' => $goal,
@@ -85,7 +86,7 @@ class SaveConversationToKnowledgeMap
             $readMaterialIds = (clone $sentMaterials)->where('status', MaterialStatus::Ready)->pluck('id')->all();
             $sentMaterials->update(['topic_id' => $topic->id]);
 
-            $savedSubtopics = $this->saveSubtopics($topic, $existingSubtopics, $subtopics);
+            ['subtopics' => $savedSubtopics, 'keys_needing_material' => $keysNeedingMaterial] = $this->saveSubtopics($topic, $existingSubtopics, $subtopics);
             $sourceMessageId = $conversation->messages()->where('role', MessageRole::Tutor)->latest('id')->value('id');
 
             if ($readMaterialIds === []) {
@@ -135,59 +136,57 @@ class SaveConversationToKnowledgeMap
     }
 
     /**
-     * Only new subtopics and those whose notes changed need material; the rest is already covered.
+     * Writes the reviewed notes as the tutor's notes of subtopics the topic already has, and adds the new ones
+     * at the end. Existing subtopics the learner left out stay: removing in the review only drops what isn't
+     * saved yet. Only new subtopics and those whose tutor notes changed need material.
      *
      * @param  Collection<string, Subtopic>  $existingSubtopics  keyed by lowercase title
      * @param  array<int, array{title: string, content: string}>  $subtopics
-     * @return array<int, string> the lowercase titles of the subtopics that need material
-     */
-    private function keysNeedingMaterial(Collection $existingSubtopics, array $subtopics): array
-    {
-        $keys = [];
-
-        foreach ($subtopics as $subtopic) {
-            $key = Str::lower($subtopic['title']);
-            $existing = $existingSubtopics->get($key);
-
-            if ($existing === null || trim((string) $existing->content) !== trim($subtopic['content'])) {
-                $keys[] = $key;
-            }
-        }
-
-        return $keys;
-    }
-
-    /**
-     * Updates the notes of subtopics the topic already has and adds the new ones at the end. Existing
-     * subtopics the learner left out stay: removing in the review only drops what isn't saved yet.
-     *
-     * @param  Collection<string, Subtopic>  $existingSubtopics  keyed by lowercase title
-     * @param  array<int, array{title: string, content: string}>  $subtopics
-     * @return array<string, Subtopic> the reviewed subtopics, keyed by lowercase title
+     * @return array{subtopics: array<string, Subtopic>, keys_needing_material: array<int, string>} keyed by lowercase title
      */
     private function saveSubtopics(Topic $topic, Collection $existingSubtopics, array $subtopics): array
     {
         $nextPosition = ($existingSubtopics->max('position') ?? 0) + 1;
         $savedSubtopics = [];
+        $keysNeedingMaterial = [];
 
         foreach ($subtopics as $subtopic) {
             $key = Str::lower($subtopic['title']);
             $existing = $existingSubtopics->get($key);
 
-            if ($existing !== null) {
+            if ($existing === null) {
+                $saved = $topic->subtopics()->create([
+                    'title' => $subtopic['title'],
+                    'content' => $subtopic['content'],
+                    'position' => $nextPosition++,
+                ]);
+            } else {
                 $existing->update(['content' => $subtopic['content']]);
-                $savedSubtopics[$key] = $existing;
+                $saved = $existing;
+            }
 
+            $savedSubtopics[$key] = $saved;
+
+            if ($this->isLearnersOwnNotes($existing, $subtopic['content'])) {
                 continue;
             }
 
-            $savedSubtopics[$key] = $topic->subtopics()->create([
-                'title' => $subtopic['title'],
-                'content' => $subtopic['content'],
-                'position' => $nextPosition++,
-            ]);
+            if ($this->saveSubtopicSource->handle($saved, SourceType::Tutor, $subtopic['content'])) {
+                $keysNeedingMaterial[] = $key;
+            }
         }
 
-        return $savedSubtopics;
+        return ['subtopics' => $savedSubtopics, 'keys_needing_material' => $keysNeedingMaterial];
+    }
+
+    /**
+     * Continuing a topic starts the draft from a subtopic's notes, which are the learner's own when the tutor
+     * has none (StartConversation). Saved back unchanged, they stay the learner's and don't become the tutor's too.
+     */
+    private function isLearnersOwnNotes(?Subtopic $existing, string $content): bool
+    {
+        return $existing !== null
+            && $existing->sourceContent(SourceType::Tutor) === null
+            && trim($content) === trim((string) $existing->sourceContent(SourceType::Own));
     }
 }

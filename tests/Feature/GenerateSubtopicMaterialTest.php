@@ -40,7 +40,7 @@ class GenerateSubtopicMaterialTest extends TestCase
         $subtopic = $this->generatingSubtopic($learner, notes: 'Old notes.');
         Flashcard::factory()->for($learner)->for($subtopic->topic)->for($subtopic)->create(['front' => 'What is cadence?']);
         $job = new GenerateSubtopicMaterial($subtopic, sourceMessageId: null);
-        $subtopic->update(['content' => 'Steps per minute.']);
+        $subtopic->sources()->sole()->update(['content' => 'Steps per minute.']);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Cadence', flashcards: 2)]])]);
 
         dispatch($job);
@@ -55,7 +55,7 @@ class GenerateSubtopicMaterialTest extends TestCase
             return $request['model'] === config('ai.levels.medium.generation_model')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $input['topic'] === ['title' => 'Running', 'goal' => 'Coach better']
-                && $input['subtopics'][0] === ['title' => 'Cadence', 'content' => 'Steps per minute.', 'existing_items' => ['What is cadence?']];
+                && $input['subtopics'][0] === ['title' => 'Cadence', 'content' => "## From the chat\n\nSteps per minute.", 'existing_items' => ['What is cadence?']];
         });
     }
 
@@ -116,9 +116,10 @@ class GenerateSubtopicMaterialTest extends TestCase
     {
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Coach better']);
 
-        return Subtopic::factory()->for($topic)->create([
+        $factory = Subtopic::factory()->for($topic);
+
+        return ($notes === null ? $factory : $factory->withTutorNotes($notes))->create([
             'title' => 'Cadence',
-            'content' => $notes,
             'generation_status' => GenerationStatus::Generating,
         ]);
     }

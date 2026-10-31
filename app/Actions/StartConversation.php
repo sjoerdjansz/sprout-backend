@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
+use App\Enums\SourceType;
 use App\Exceptions\AiRequestFailed;
 use App\Models\Material;
 use App\Models\StudySession;
@@ -27,7 +28,7 @@ class StartConversation
      */
     public function handle(User $learner, string $firstMessage, ?Topic $topic, Collection $materials): StudySession
     {
-        $topic?->load('category', 'subtopics');
+        $topic?->load('category', 'subtopics.sources');
 
         $answer = $this->askTutor->handle(
             learner: $learner,
@@ -78,7 +79,11 @@ class StartConversation
             ],
             'subtopics' => $topic->subtopics
                 ->sortBy('position')
-                ->map(fn (Subtopic $subtopic): array => ['title' => $subtopic->title, 'content' => $subtopic->content ?? ''])
+                // The tutor continues its own notes; a subtopic without them starts from the learner's.
+                ->map(fn (Subtopic $subtopic): array => [
+                    'title' => $subtopic->title,
+                    'content' => $subtopic->sourceContent(SourceType::Tutor) ?? $subtopic->sourceContent(SourceType::Own) ?? '',
+                ])
                 ->values()
                 ->all(),
         ];

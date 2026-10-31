@@ -97,7 +97,7 @@ class TutorConversationTest extends TestCase
             'goal_deadline' => now()->addMonth(),
             'goal_recall_percentage' => 80,
         ]);
-        $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Patellofemoral pain syndrome', 'content' => 'Pain around the kneecap.']);
+        $subtopic = Subtopic::factory()->for($topic)->withTutorNotes('Pain around the kneecap.')->create(['title' => 'Patellofemoral pain syndrome']);
         SubtopicProgress::factory()->for($learner)->for($subtopic)->create(['mastery' => 40]);
         Sanctum::actingAs($learner);
         Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);

@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\SourceType;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ class AddSubtopics
 {
     public function __construct(
         private QueueMaterialGeneration $queueMaterialGeneration,
+        private SaveSubtopicSource $saveSubtopicSource,
         private SummariseSubtopicProgress $summariseSubtopicProgress,
     ) {}
 
@@ -42,7 +44,8 @@ class AddSubtopics
                     'position' => $nextPosition++,
                 ]);
 
-                if ($subtopic['notes'] !== null) {
+                // The part of the topic's source is the learner's own text, so it becomes their own notes.
+                if ($this->saveSubtopicSource->handle($created, SourceType::Own, $subtopic['notes'])) {
                     $this->queueMaterialGeneration->handle($created);
                 }
 

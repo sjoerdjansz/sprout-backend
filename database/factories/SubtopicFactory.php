@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Subtopic;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,8 +23,23 @@ class SubtopicFactory extends Factory
             'topic_id' => Topic::factory(),
             'title' => fake()->words(3, true),
             'description' => null,
-            'content' => fake()->paragraph(),
             'position' => fake()->numberBetween(1, 10),
         ];
+    }
+
+    /**
+     * With notes from the chat (specs/subtopic-sources.md).
+     */
+    public function withTutorNotes(?string $notes = null): static
+    {
+        return $this->has(SubtopicSource::factory()->tutor()->state(['content' => $notes ?? fake()->paragraph()]), 'sources');
+    }
+
+    /**
+     * With the learner's own notes.
+     */
+    public function withOwnNotes(?string $notes = null): static
+    {
+        return $this->has(SubtopicSource::factory()->own()->state(['content' => $notes ?? fake()->paragraph()]), 'sources');
     }
 }

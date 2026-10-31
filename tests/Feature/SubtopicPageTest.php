@@ -37,7 +37,7 @@ class SubtopicPageTest extends TestCase
         $learner = User::factory()->create();
         $category = Category::factory()->for($learner)->create(['name' => 'Science']);
         $topic = Topic::factory()->for($learner)->for($category)->create(['title' => 'Biology']);
-        $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Photosynthesis', 'content' => 'Light, water and CO2.']);
+        $subtopic = Subtopic::factory()->for($topic)->withOwnNotes('Light, water and CO2.')->create(['title' => 'Photosynthesis']);
         Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['due_at' => now()->subDay()]);
         Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create(['suspended_at' => now()]);
         Question::factory()->for($topic)->for($subtopic)->create();
@@ -62,7 +62,7 @@ class SubtopicPageTest extends TestCase
     public function test_someone_elses_subtopic_is_not_found(): void
     {
         $learner = User::factory()->create();
-        $someoneElses = Subtopic::factory()->create(['content' => 'Notes.']);
+        $someoneElses = Subtopic::factory()->withTutorNotes()->create();
         Sanctum::actingAs($learner);
         Http::fake();
 
@@ -110,7 +110,7 @@ class SubtopicPageTest extends TestCase
     {
         Queue::fake();
         $learner = $this->learnerWithAiConfigured();
-        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => 'Light, water and CO2 become sugar.']);
+        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->withTutorNotes('Light, water and CO2 become sugar.')->create();
         Sanctum::actingAs($learner);
         Http::fake();
 
@@ -126,7 +126,7 @@ class SubtopicPageTest extends TestCase
     public function test_generating_needs_notes_to_generate_from(): void
     {
         $learner = $this->learnerWithAiConfigured();
-        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => null]);
+        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create();
         Sanctum::actingAs($learner);
         Http::fake();
 
@@ -142,8 +142,8 @@ class SubtopicPageTest extends TestCase
         Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
-        $failed = Subtopic::factory()->for($topic)->create(['content' => 'Notes.', 'generation_status' => GenerationStatus::Failed]);
-        $generating = Subtopic::factory()->for($topic)->create(['content' => 'Notes.', 'generation_status' => GenerationStatus::Generating]);
+        $failed = Subtopic::factory()->for($topic)->withTutorNotes('Notes.')->create(['generation_status' => GenerationStatus::Failed]);
+        $generating = Subtopic::factory()->for($topic)->withTutorNotes('Notes.')->create(['generation_status' => GenerationStatus::Generating]);
         Sanctum::actingAs($learner);
 
         $this->postJson("/api/v1/subtopics/{$failed->id}/generate")
@@ -160,7 +160,7 @@ class SubtopicPageTest extends TestCase
     public function test_generating_is_rate_limited_per_learner(): void
     {
         $learner = User::factory()->create();
-        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create(['content' => null]);
+        $subtopic = Subtopic::factory()->for(Topic::factory()->for($learner))->create();
         Sanctum::actingAs($learner);
 
         for ($attempt = 1; $attempt <= 5; $attempt++) {

@@ -3,8 +3,10 @@
 namespace App\Jobs;
 
 use App\Actions\QueueMaterialGeneration;
+use App\Actions\SaveSubtopicSource;
 use App\Actions\SplitMaterialOverSubtopics;
 use App\Enums\MaterialStatus;
+use App\Enums\SourceType;
 use App\Models\Material;
 use App\Models\Subtopic;
 use App\Models\Topic;
@@ -22,10 +24,10 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * After a conversation with files is saved, adds each subtopic's part of those files to its notes and then
- * queues the flashcards and questions (specs/chat-attachments.md). One job per save: every file is read before
- * anything is written, so a retry never adds a part twice. When every try fails, the material is still made,
- * from the notes the subtopics already have.
+ * After a conversation with files is saved, gives each subtopic its part of every file as a source of its own
+ * and then queues the flashcards and questions (specs/chat-attachments.md, specs/subtopic-sources.md). One job
+ * per save: every file is read before anything is written. When every try fails, the material is still made,
+ * from the sources the subtopics already have.
  */
 #[DeleteWhenMissingModels]
 #[Timeout(180)]
@@ -37,8 +39,8 @@ class SplitSourcesOverSubtopics implements ShouldQueue
 {
     use Queueable;
 
-    /** A subtopic's notes stay within what the API lets the learner save (SubtopicRequest). */
-    public const MAX_NOTES_CHARACTERS = 10_000;
+    /** A file source stays within the size of the other sources (SubtopicRequest's notes). */
+    public const MAX_SOURCE_CHARACTERS = 10_000;
 
     /**
      * @param  array<int, int>  $materialIds  the files the save linked to the topic
@@ -53,7 +55,7 @@ class SplitSourcesOverSubtopics implements ShouldQueue
     ) {}
 
     /**
-     * One save per topic at a time, so two of them never add to the same notes at once.
+     * One save per topic at a time, so two of them never write the same sources at once.
      *
      * @return array<int, object>
      */
@@ -62,9 +64,12 @@ class SplitSourcesOverSubtopics implements ShouldQueue
         return [(new WithoutOverlapping("split-sources-{$this->topic->id}"))->releaseAfter(30)->expireAfter(240)];
     }
 
-    public function handle(SplitMaterialOverSubtopics $splitMaterialOverSubtopics, QueueMaterialGeneration $queueMaterialGeneration): void
-    {
-        $subtopics = $this->topic->subtopics()->orderBy('position')->get();
+    public function handle(
+        SplitMaterialOverSubtopics $splitMaterialOverSubtopics,
+        SaveSubtopicSource $saveSubtopicSource,
+        QueueMaterialGeneration $queueMaterialGeneration,
+    ): void {
+        $subtopics = $this->topic->subtopics()->with('sources.material')->orderBy('position')->get();
         $materials = Material::whereKey($this->materialIds)
             ->where('topic_id', $this->topic->id)
             ->where('status', MaterialStatus::Ready)
@@ -75,27 +80,21 @@ class SplitSourcesOverSubtopics implements ShouldQueue
             $material->id => $splitMaterialOverSubtopics->handle($this->topic, $material, $subtopics),
         ]);
 
-        DB::transaction(function () use ($subtopics, $materials, $excerptsPerMaterial, $queueMaterialGeneration): void {
-            $subtopicIdsWithNewNotes = [];
+        DB::transaction(function () use ($subtopics, $materials, $excerptsPerMaterial, $saveSubtopicSource, $queueMaterialGeneration): void {
+            $subtopicIdsWithNewSources = [];
 
             foreach ($subtopics as $subtopic) {
-                $notes = (string) $subtopic->content;
-
                 foreach ($materials as $material) {
                     $blocks = $excerptsPerMaterial[$material->id][$subtopic->id] ?? [];
 
-                    if ($blocks !== []) {
-                        $notes = $this->withExcerpt($notes, $material->original_filename, $blocks);
+                    // Written as a whole per file, so a retry replaces the part rather than adding it twice.
+                    if ($blocks !== [] && $saveSubtopicSource->handle($subtopic, SourceType::File, $this->fittingPart($blocks), $material)) {
+                        $subtopicIdsWithNewSources[] = $subtopic->id;
                     }
-                }
-
-                if ($notes !== (string) $subtopic->content) {
-                    $subtopic->update(['content' => $notes]);
-                    $subtopicIdsWithNewNotes[] = $subtopic->id;
                 }
             }
 
-            $this->queueMaterial($queueMaterialGeneration, [...$this->subtopicIdsNeedingMaterial, ...$subtopicIdsWithNewNotes]);
+            $this->queueMaterial($queueMaterialGeneration, [...$this->subtopicIdsNeedingMaterial, ...$subtopicIdsWithNewSources]);
         });
     }
 
@@ -113,32 +112,28 @@ class SplitSourcesOverSubtopics implements ShouldQueue
     }
 
     /**
-     * Adds the part under a heading with the file's name. A part that doesn't fit in the notes is cut at a
-     * block: the whole file stays with the topic.
+     * The blocks that fit in one source, in order. A part that doesn't fit is cut at a block: the whole file
+     * stays with the topic.
      *
      * @param  array<int, string>  $blocks
      */
-    private function withExcerpt(string $notes, string $filename, array $blocks): string
+    private function fittingPart(array $blocks): string
     {
-        $section = "### From {$filename}";
+        $part = '';
 
         foreach ($blocks as $block) {
-            $longer = $section."\n\n".$block;
+            $longer = $part === '' ? $block : $part."\n\n".$block;
 
-            if (Str::length(trim($notes."\n\n".$longer)) > self::MAX_NOTES_CHARACTERS) {
-                Log::info('Part of an uploaded file did not fit in a subtopic\'s notes.', ['topic_id' => $this->topic->id]);
+            if (Str::length($longer) > self::MAX_SOURCE_CHARACTERS) {
+                Log::info('Part of an uploaded file did not fit in one source.', ['topic_id' => $this->topic->id]);
 
                 break;
             }
 
-            $section = $longer;
+            $part = $longer;
         }
 
-        if ($section === "### From {$filename}") {
-            return $notes;
-        }
-
-        return trim($notes."\n\n".$section);
+        return $part;
     }
 
     /**

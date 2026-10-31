@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\SourceType;
 use App\Models\Answer;
 use App\Models\Category;
 use App\Models\DailyActivity;
@@ -64,7 +65,7 @@ class LearnerExportResource extends JsonResource
                     'id' => $subtopic->id,
                     'title' => $subtopic->title,
                     'description' => $subtopic->description,
-                    'notes' => $subtopic->content,
+                    'notes' => $subtopic->sourceContent(SourceType::Own),
                     'position' => $subtopic->position,
                     'mastery' => $subtopic->progress->first()?->mastery,
                     'last_studied_at' => $subtopic->progress->first()?->last_studied_at,

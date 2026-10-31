@@ -54,7 +54,7 @@ class SplitMaterialOverSubtopics
                     'topic' => ['title' => $topic->title, 'goal' => $topic->goal ?? ''],
                     'subtopics' => $subtopics->map(fn (Subtopic $subtopic): array => [
                         'title' => $subtopic->title,
-                        'notes' => $subtopic->content ?? '',
+                        'notes' => $subtopic->sourceText(),
                     ])->values()->all(),
                     'blocks' => collect($blocks)->map(fn (string $text, int $number): array => [
                         'number' => $number,

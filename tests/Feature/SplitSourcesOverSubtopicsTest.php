@@ -6,6 +6,7 @@ use App\Actions\SplitMaterialOverSubtopics;
 use App\Enums\AiCallKind;
 use App\Enums\GenerationStatus;
 use App\Enums\MessageRole;
+use App\Enums\SourceType;
 use App\Exceptions\AiRequestFailed;
 use App\Jobs\GenerateSubtopicMaterial;
 use App\Jobs\SplitSourcesOverSubtopics;
@@ -25,8 +26,8 @@ use Tests\Concerns\FakesOpenAi;
 use Tests\TestCase;
 
 /**
- * Saving a conversation with files gives each subtopic its part of those files as notes, before its
- * flashcards and questions are made (specs/chat-attachments.md).
+ * Saving a conversation with files gives each subtopic its part of every file as a source of its own, before
+ * its flashcards and questions are made (specs/chat-attachments.md, specs/subtopic-sources.md).
  */
 class SplitSourcesOverSubtopicsTest extends TestCase
 {
@@ -67,7 +68,7 @@ class SplitSourcesOverSubtopicsTest extends TestCase
             && $job->sourceMessageId === $tutorMessage->id);
     }
 
-    public function test_each_subtopic_gets_its_part_of_the_file_word_for_word_and_then_its_material(): void
+    public function test_each_subtopic_gets_its_part_of_the_file_word_for_word_as_a_source_and_then_its_material(): void
     {
         Queue::fake([GenerateSubtopicMaterial::class]);
         $learner = $this->learnerWithAiConfigured();
@@ -80,9 +81,11 @@ class SplitSourcesOverSubtopicsTest extends TestCase
 
         dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id], [$cadence->id], sourceMessageId: 9));
 
-        $this->assertSame("Steps per minute.\n\n### From Lecture 1.pdf\n\n# Cadence\n\nCadence is steps per minute.", $cadence->fresh()->content);
-        $this->assertSame("How far a step goes.\n\n### From Lecture 1.pdf\n\n# Stride length\n\nStride length is how far each step carries you.", $stride->fresh()->content);
-        // Stride length already had material, but its notes changed, so it gets more.
+        $this->assertSame("# Cadence\n\nCadence is steps per minute.", $this->filePart($cadence, $lecture));
+        $this->assertSame("# Stride length\n\nStride length is how far each step carries you.", $this->filePart($stride, $lecture));
+        // The tutor's notes stay as they were.
+        $this->assertSame('Steps per minute.', $cadence->fresh()->sourceContent(SourceType::Tutor));
+        // Stride length already had material, but it got a new source, so it gets more.
         Queue::assertPushed(GenerateSubtopicMaterial::class, 2);
         Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($stride) && $job->sourceMessageId === 9);
         $this->assertSame(GenerationStatus::Generating, $stride->fresh()->generation_status);
@@ -105,8 +108,8 @@ class SplitSourcesOverSubtopicsTest extends TestCase
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $input['topic'] === ['title' => 'Running', 'goal' => 'Coach better']
                 && $input['subtopics'] === [
-                    ['title' => 'Cadence', 'notes' => 'Steps per minute.'],
-                    ['title' => 'Stride length', 'notes' => 'How far a step goes.'],
+                    ['title' => 'Cadence', 'notes' => "## From the chat\n\nSteps per minute."],
+                    ['title' => 'Stride length', 'notes' => "## From the chat\n\nHow far a step goes."],
                 ]
                 && count($input['blocks']) === 5
                 && $input['blocks'][2] === ['number' => 3, 'text' => 'Course logistics: exam on Friday.'];
@@ -131,12 +134,12 @@ class SplitSourcesOverSubtopicsTest extends TestCase
 
         dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id], []));
 
-        $this->assertSame("Steps per minute.\n\n### From Lecture 1.pdf\n\nCadence is steps per minute.", $cadence->fresh()->content);
-        $this->assertSame('How far a step goes.', $stride->fresh()->content);
+        $this->assertSame('Cadence is steps per minute.', $this->filePart($cadence, $lecture));
+        $this->assertSame(1, $stride->sources()->count());
         Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
     }
 
-    public function test_every_file_is_split_and_each_part_gets_its_own_heading(): void
+    public function test_every_file_is_split_and_each_part_is_a_source_of_its_own(): void
     {
         Queue::fake([GenerateSubtopicMaterial::class]);
         $learner = $this->learnerWithAiConfigured();
@@ -149,9 +152,11 @@ class SplitSourcesOverSubtopicsTest extends TestCase
         dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id, $syllabus->id, $failed->id], [$cadence->id]));
 
         Http::assertSentCount(2);
+        $this->assertSame('Cadence is steps per minute.', $this->filePart($cadence, $lecture));
+        $this->assertSame('Week 1: cadence drills.', $this->filePart($cadence, $syllabus));
         $this->assertSame(
-            "Steps per minute.\n\n### From Lecture 1.pdf\n\nCadence is steps per minute.\n\n### From Syllabus.docx\n\nWeek 1: cadence drills.",
-            $cadence->fresh()->content,
+            "## From the chat\n\nSteps per minute.\n\n## From Lecture 1.pdf\n\nCadence is steps per minute.\n\n## From Syllabus.docx\n\nWeek 1: cadence drills.",
+            $cadence->fresh()->load('sources.material')->sourceText(),
         );
     }
 
@@ -199,24 +204,39 @@ class SplitSourcesOverSubtopicsTest extends TestCase
         $this->assertSame([1 => "{$longLine} {$longLine}", 2 => $longLine], $blocks);
     }
 
-    public function test_notes_never_grow_past_10000_characters(): void
+    public function test_a_file_part_never_grows_past_10000_characters(): void
     {
         Queue::fake([GenerateSubtopicMaterial::class]);
         $learner = $this->learnerWithAiConfigured();
         [$topic, $cadence] = $this->topicWithSubtopics($learner);
-        $cadence->update(['content' => str_repeat('n', 6_000)]);
-        $paragraph = str_repeat('p', 1_400);
-        $lecture = Material::factory()->for($topic)->create(['extracted_text' => implode("\n\n", array_fill(0, 5, $paragraph))]);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [['title' => 'Cadence', 'blocks' => [1, 2, 3, 4, 5]]]])]);
+        $paragraph = str_repeat('p', 1_400).'.';
+        $lecture = Material::factory()->for($topic)->create(['extracted_text' => implode("\n\n", array_fill(0, 8, $paragraph))]);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [['title' => 'Cadence', 'blocks' => range(1, 8)]]])]);
 
         dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id], []));
 
-        $notes = $cadence->fresh()->content;
-        $this->assertLessThanOrEqual(SplitSourcesOverSubtopics::MAX_NOTES_CHARACTERS, Str::length($notes));
-        $this->assertSame(2, substr_count($notes, $paragraph));
+        $part = $this->filePart($cadence, $lecture);
+        $this->assertLessThanOrEqual(SplitSourcesOverSubtopics::MAX_SOURCE_CHARACTERS, Str::length($part));
+        $this->assertSame(7, substr_count($part, $paragraph));
     }
 
-    public function test_when_every_try_fails_the_material_is_made_from_the_notes_as_they_are(): void
+    public function test_splitting_again_replaces_a_files_part_instead_of_adding_it_twice(): void
+    {
+        Queue::fake([GenerateSubtopicMaterial::class]);
+        $learner = $this->learnerWithAiConfigured();
+        [$topic, $cadence] = $this->topicWithSubtopics($learner);
+        $lecture = Material::factory()->for($topic)->create(['extracted_text' => self::LECTURE]);
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [['title' => 'Cadence', 'blocks' => [2]]]])]);
+
+        dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id], []));
+        dispatch(new SplitSourcesOverSubtopics($topic, [$lecture->id], []));
+
+        $this->assertSame(1, $cadence->sources()->where('type', SourceType::File)->count());
+        // The second split found nothing new, so it made no material.
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
+    }
+
+    public function test_when_every_try_fails_the_material_is_made_from_the_sources_as_they_are(): void
     {
         Queue::fake([GenerateSubtopicMaterial::class]);
         $learner = $this->learnerWithAiConfigured();
@@ -225,7 +245,7 @@ class SplitSourcesOverSubtopicsTest extends TestCase
 
         (new SplitSourcesOverSubtopics($topic, [$lecture->id], [$cadence->id], sourceMessageId: 9))->failed(AiRequestFailed::unavailable());
 
-        $this->assertSame('Steps per minute.', $cadence->fresh()->content);
+        $this->assertSame(1, $cadence->sources()->count());
         Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
         Queue::assertPushed(GenerateSubtopicMaterial::class, fn (GenerateSubtopicMaterial $job): bool => $job->subtopic->is($cadence) && $job->sourceMessageId === 9);
     }
@@ -246,9 +266,14 @@ class SplitSourcesOverSubtopicsTest extends TestCase
         try {
             app()->call([new SplitSourcesOverSubtopics($topic, [$lecture->id, $syllabus->id], [$cadence->id]), 'handle']);
         } finally {
-            $this->assertSame('Steps per minute.', $cadence->fresh()->content);
+            $this->assertSame(1, $cadence->sources()->count());
             Queue::assertNothingPushed();
         }
+    }
+
+    private function filePart(Subtopic $subtopic, Material $material): ?string
+    {
+        return $subtopic->sources()->where('type', SourceType::File)->where('material_id', $material->id)->value('content');
     }
 
     /**
@@ -257,8 +282,8 @@ class SplitSourcesOverSubtopicsTest extends TestCase
     private function topicWithSubtopics(User $learner): array
     {
         $topic = Topic::factory()->for($learner)->create(['title' => 'Running', 'goal' => 'Coach better']);
-        $cadence = Subtopic::factory()->for($topic)->create(['title' => 'Cadence', 'content' => 'Steps per minute.', 'position' => 1, 'generation_status' => GenerationStatus::Generating]);
-        $stride = Subtopic::factory()->for($topic)->create(['title' => 'Stride length', 'content' => 'How far a step goes.', 'position' => 2, 'generation_status' => GenerationStatus::Ready]);
+        $cadence = Subtopic::factory()->for($topic)->withTutorNotes('Steps per minute.')->create(['title' => 'Cadence', 'position' => 1, 'generation_status' => GenerationStatus::Generating]);
+        $stride = Subtopic::factory()->for($topic)->withTutorNotes('How far a step goes.')->create(['title' => 'Stride length', 'position' => 2, 'generation_status' => GenerationStatus::Ready]);
 
         return [$topic, $cadence, $stride];
     }

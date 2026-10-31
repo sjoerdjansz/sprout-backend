@@ -42,7 +42,7 @@ class PracticeMessagesTest extends TestCase
         $this->learner = $this->learnerWithAiConfigured();
         $this->learner->settings->update(['learner_role' => LearnerRole::Student]);
         $this->topic = Topic::factory()->for($this->learner)->create(['title' => 'Photosynthesis', 'goal' => 'Pass the biology exam']);
-        $this->subtopic = Subtopic::factory()->for($this->topic)->create(['title' => 'Light', 'content' => 'Chlorophyll absorbs red and blue light.']);
+        $this->subtopic = Subtopic::factory()->for($this->topic)->withTutorNotes('Chlorophyll absorbs red and blue light.')->create(['title' => 'Light']);
         Http::preventStrayRequests();
     }
 
@@ -109,7 +109,7 @@ class PracticeMessagesTest extends TestCase
                 && $request['response_format']['json_schema']['name'] === 'practice_tutor_reply'
                 && $context['learner'] === ['role' => 'student']
                 && $context['topic'] === ['title' => 'Photosynthesis', 'goal' => 'Pass the biology exam']
-                && $context['subtopic'] === ['title' => 'Light', 'notes' => 'Chlorophyll absorbs red and blue light.', 'mastery_percentage' => 45]
+                && $context['subtopic'] === ['title' => 'Light', 'notes' => "## From the chat\n\nChlorophyll absorbs red and blue light.", 'mastery_percentage' => 45]
                 && $context['flashcards'] === [
                     ['subtopic' => 'Light', 'front' => 'Which colour is reflected?', 'back' => 'Green.', 'recall_percentage' => null],
                     ['subtopic' => 'Light', 'front' => 'What absorbs light?', 'back' => 'Chlorophyll.', 'recall_percentage' => 100],

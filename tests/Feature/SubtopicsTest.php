@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\GenerationStatus;
+use App\Enums\SourceType;
 use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Flashcard;
 use App\Models\Question;
@@ -105,7 +106,7 @@ class SubtopicsTest extends TestCase
         Queue::fake();
         $learner = $this->learnerWithAiConfigured();
         $topic = Topic::factory()->for($learner)->create();
-        $subtopic = Subtopic::factory()->for($topic)->create(['title' => 'Cadence', 'content' => 'Steps per minute.']);
+        $subtopic = Subtopic::factory()->for($topic)->withOwnNotes('Steps per minute.')->create(['title' => 'Cadence']);
         Sanctum::actingAs($learner);
 
         $this->putJson("/api/v1/subtopics/{$subtopic->id}", [
@@ -134,13 +135,39 @@ class SubtopicsTest extends TestCase
         Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
     }
 
+    public function test_the_form_edits_only_the_learners_own_notes(): void
+    {
+        Queue::fake();
+        $learner = User::factory()->create();
+        $topic = Topic::factory()->for($learner)->create();
+        $subtopic = Subtopic::factory()->for($topic)->withTutorNotes('From the chat.')->create(['title' => 'Cadence']);
+        Sanctum::actingAs($learner);
+
+        $this->putJson("/api/v1/subtopics/{$subtopic->id}", ['topic_id' => $topic->id, 'title' => 'Cadence', 'notes' => 'My coach says 170.'])
+            ->assertOk()
+            ->assertJsonPath('subtopic.notes', 'My coach says 170.')
+            ->assertJsonPath('subtopic.generation_status', 'generating');
+        $this->assertSame('From the chat.', $subtopic->fresh()->sourceContent(SourceType::Tutor));
+        $this->assertSame('My coach says 170.', $subtopic->fresh()->sourceContent(SourceType::Own));
+
+        // Clearing the notes removes the learner's own notes only, and makes nothing new.
+        $subtopic->fresh()->update(['generation_status' => GenerationStatus::Ready]);
+        $this->putJson("/api/v1/subtopics/{$subtopic->id}", ['topic_id' => $topic->id, 'title' => 'Cadence', 'notes' => null])
+            ->assertOk()
+            ->assertJsonPath('subtopic.notes', null)
+            ->assertJsonPath('subtopic.generation_status', 'ready');
+        $this->assertNull($subtopic->fresh()->sourceContent(SourceType::Own));
+        $this->assertSame('From the chat.', $subtopic->fresh()->sourceContent(SourceType::Tutor));
+        Queue::assertPushed(GenerateSubtopicMaterial::class, 1);
+    }
+
     public function test_moving_a_subtopic_takes_its_cards_questions_and_progress_along(): void
     {
         $learner = User::factory()->create();
         $from = Topic::factory()->for($learner)->create();
         $to = Topic::factory()->for($learner)->create();
         Subtopic::factory()->for($to)->create(['position' => 3]);
-        $subtopic = Subtopic::factory()->for($from)->create(['title' => 'Cadence', 'content' => 'Steps.']);
+        $subtopic = Subtopic::factory()->for($from)->withOwnNotes('Steps.')->create(['title' => 'Cadence']);
         $flashcard = Flashcard::factory()->for($learner)->for($from)->for($subtopic)->create(['due_at' => now()->subDay()]);
         $question = Question::factory()->for($from)->for($subtopic)->create();
         SubtopicProgress::factory()->for($learner)->for($subtopic)->create(['mastery' => 64]);

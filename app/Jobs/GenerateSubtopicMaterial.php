@@ -58,7 +58,7 @@ class GenerateSubtopicMaterial implements ShouldQueue
     {
         $subtopic = $this->subtopic;
 
-        if (trim((string) $subtopic->content) === '') {
+        if ($subtopic->sourceText() === '') {
             $subtopic->update(['generation_status' => GenerationStatus::Ready]);
 
             return;
@@ -71,7 +71,7 @@ class GenerateSubtopicMaterial implements ShouldQueue
             topic: ['title' => $topic->title, 'goal' => $topic->goal ?? ''],
             subtopics: [[
                 'title' => $subtopic->title,
-                'content' => $subtopic->content,
+                'content' => $subtopic->sourceText(),
                 'existing_items' => [
                     ...$subtopic->flashcards()->pluck('front'),
                     ...$subtopic->questions()->pluck('prompt'),
