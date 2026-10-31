@@ -7,6 +7,7 @@ use App\Enums\GenerationStatus;
 use App\Exceptions\AiRequestFailed;
 use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Flashcard;
+use App\Models\Material;
 use App\Models\Subtopic;
 use App\Models\Topic;
 use App\Models\User;
@@ -55,6 +56,7 @@ class GenerateSubtopicMaterialTest extends TestCase
             return $request['model'] === config('ai.levels.medium.generation_model')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $input['topic'] === ['title' => 'Running', 'goal' => 'Coach better']
+                && $input['sources'] === []
                 && $input['subtopics'][0] === ['title' => 'Cadence', 'content' => 'Steps per minute.', 'existing_items' => ['What is cadence?']];
         });
     }
@@ -110,6 +112,25 @@ class GenerateSubtopicMaterialTest extends TestCase
         $this->assertSame('15,60', $payload['backoff']);
         $this->assertGreaterThan(config('ai.generation.timeout_seconds'), $payload['timeout']);
         $this->assertGreaterThan($payload['timeout'], config('queue.connections.database.retry_after'));
+    }
+
+    public function test_the_topics_read_files_are_sent_as_sources(): void
+    {
+        $learner = $this->learnerWithAiConfigured();
+        $subtopic = $this->generatingSubtopic($learner, notes: 'Steps per minute.');
+        $topic = $subtopic->topic;
+        Material::factory()->for($topic)->create(['original_filename' => 'Lecture 1.pdf', 'extracted_text' => 'Cadence: aim for 170 to 180.']);
+        Material::factory()->for($topic)->failed()->create();
+        Material::factory()->unsent()->for($learner)->create();
+        Http::fake(['api.openai.com/*' => $this->openAiAnswer(['subtopics' => [$this->material('Cadence', flashcards: 1)]])]);
+
+        dispatch(new GenerateSubtopicMaterial($subtopic));
+
+        Http::assertSent(function (Request $request): bool {
+            $input = json_decode($request['messages'][1]['content'], true);
+
+            return $input['sources'] === [['name' => 'Lecture 1.pdf', 'text' => 'Cadence: aim for 170 to 180.']];
+        });
     }
 
     private function generatingSubtopic(User $learner, ?string $notes): Subtopic

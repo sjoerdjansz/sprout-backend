@@ -9,6 +9,7 @@ use App\Enums\QuestionType;
 use App\Jobs\GenerateSubtopicMaterial;
 use App\Models\Category;
 use App\Models\Flashcard;
+use App\Models\Material;
 use App\Models\Message;
 use App\Models\Question;
 use App\Models\StudySession;
@@ -277,6 +278,24 @@ class SaveConversationTest extends TestCase
         $this->postJson("/api/v1/conversations/{$changed->id}/save", $this->reviewedDraft(subtopics: $unchangedSubtopics))
             ->assertCreated()
             ->assertJsonPath('topic.category.name', 'Sport');
+    }
+
+    public function test_the_files_sent_in_the_conversation_become_the_topics_sources(): void
+    {
+        Queue::fake();
+        $learner = $this->learnerWithAiConfigured();
+        $conversation = $this->openConversation($learner);
+        $userMessage = Message::factory()->for($conversation)->create(['role' => MessageRole::User]);
+        $sent = Material::factory()->unsent()->for($learner)->create(['message_id' => $userMessage->id]);
+        $notSent = Material::factory()->unsent()->for($learner)->create();
+        $inAnotherConversation = Material::factory()->unsent()->for($learner)->create(['message_id' => Message::factory()]);
+        Sanctum::actingAs($learner);
+
+        $this->postJson("/api/v1/conversations/{$conversation->id}/save", $this->reviewedDraft())->assertCreated();
+
+        $this->assertSame($conversation->fresh()->topic_id, $sent->fresh()->topic_id);
+        $this->assertNull($notSent->fresh()->topic_id);
+        $this->assertNull($inAnotherConversation->fresh()->topic_id);
     }
 
     private function openConversation(User $learner, ?Topic $topic = null): StudySession
