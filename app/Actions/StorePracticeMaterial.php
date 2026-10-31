@@ -15,9 +15,8 @@ class StorePracticeMaterial
     /**
      * @param  array{flashcards: array<int, array{front: string, back: string}>, questions: array<int, array{type: QuestionType, prompt: string, model_answer: ?string, options: array<int, array{label: string, is_correct: bool, explanation: ?string}>}>}  $material
      * @param  int|null  $sourceMessageId  the tutor message the material came from, if it came from a conversation
-     * @return array{flashcards: int, questions: int} how many were added
      */
-    public function handle(Subtopic $subtopic, int $learnerId, array $material, ?int $sourceMessageId): array
+    public function handle(Subtopic $subtopic, int $learnerId, array $material, ?int $sourceMessageId): void
     {
         foreach ($material['flashcards'] as $flashcard) {
             $subtopic->flashcards()->create([
@@ -45,10 +44,5 @@ class StorePracticeMaterial
                 $question->options()->create([...$option, 'position' => $position + 1]);
             }
         }
-
-        return [
-            'flashcards' => count($material['flashcards']),
-            'questions' => count($material['questions']),
-        ];
     }
 }
