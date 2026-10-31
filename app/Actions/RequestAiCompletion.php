@@ -20,6 +20,7 @@ class RequestAiCompletion
     public const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
     /**
+     * @param  string  $reasoningEffort  low, medium, high or xhigh (config/ai.php)
      * @param  array<int, array{role: string, content: string}>  $messages  the conversation after the instructions
      * @param  array<string, mixed>  $schema  JSON Schema the answer must follow (strict mode)
      * @param  User  $learner  who the call is for: their safety identifier is sent, and the call counts towards their usage
@@ -30,6 +31,7 @@ class RequestAiCompletion
     public function handle(
         string $apiKey,
         string $model,
+        string $reasoningEffort,
         string $instructions,
         array $messages,
         string $schemaName,
@@ -45,6 +47,7 @@ class RequestAiCompletion
                 ->timeout($timeoutSeconds)
                 ->post(self::ENDPOINT, [
                     'model' => $model,
+                    'reasoning_effort' => $reasoningEffort,
                     'max_completion_tokens' => $maxCompletionTokens,
                     'messages' => [
                         ['role' => 'developer', 'content' => $instructions],

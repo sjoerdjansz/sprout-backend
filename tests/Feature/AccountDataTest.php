@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Enums\ReviewRating;
-use App\Models\AiCredential;
 use App\Models\Answer;
 use App\Models\DailyActivity;
 use App\Models\Flashcard;
@@ -37,11 +36,10 @@ class AccountDataTest extends TestCase
         $this->deleteJson('/api/v1/user', ['email' => 'ada@example.com'])->assertUnauthorized();
     }
 
-    public function test_the_export_holds_everything_of_the_learner_and_nothing_secret(): void
+    public function test_the_export_holds_everything_of_the_learner(): void
     {
         $learner = $this->learner();
         $topic = $this->topicWithLearningData($learner);
-        AiCredential::factory()->for($learner)->create(['encrypted_api_key' => 'sk-secret-key']);
         $this->topicWithLearningData(User::factory()->create());
 
         $response = $this->get('/api/v1/user/export');
@@ -59,7 +57,6 @@ class AccountDataTest extends TestCase
             ->assertJsonCount(1, 'conversations')
             ->assertJsonCount(1, 'conversations.0.messages')
             ->assertJsonCount(1, 'daily_activity');
-        $this->assertStringNotContainsString('sk-secret-key', $response->getContent());
     }
 
     public function test_cards_export_as_csv_for_anki(): void

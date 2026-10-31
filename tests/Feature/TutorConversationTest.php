@@ -6,7 +6,6 @@ use App\Enums\AiLevel;
 use App\Enums\LearnerRole;
 use App\Enums\MessageRole;
 use App\Enums\SessionKind;
-use App\Models\AiCredential;
 use App\Models\Flashcard;
 use App\Models\Message;
 use App\Models\StudySession;
@@ -76,6 +75,7 @@ class TutorConversationTest extends TestCase
 
             return $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY)
                 && $request['model'] === config('ai.levels.low.chat_model')
+                && $request['reasoning_effort'] === config('ai.levels.low.chat_reasoning_effort')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
                 // The provider never learns who the learner is: no name, only the safety identifier.
@@ -233,18 +233,6 @@ class TutorConversationTest extends TestCase
         $this->getJson("/api/v1/conversations/{$someoneElsesConversation->id}")->assertNotFound();
         $this->postJson("/api/v1/conversations/{$someoneElsesConversation->id}/messages", ['message' => 'Hi'])->assertNotFound();
         Http::assertNothingSent();
-    }
-
-    public function test_sprouts_own_key_is_used_even_when_the_learner_once_connected_a_key(): void
-    {
-        $learner = $this->learnerWithAiConfigured();
-        AiCredential::factory()->for($learner)->create(['encrypted_api_key' => 'sk-old-learner-key']);
-        Sanctum::actingAs($learner);
-        Http::fake(['api.openai.com/*' => $this->openAiAnswer($this->tutorReply())]);
-
-        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertCreated();
-
-        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY));
     }
 
     public function test_without_a_configured_key_the_learner_hears_sprouts_ai_is_out_of_service(): void

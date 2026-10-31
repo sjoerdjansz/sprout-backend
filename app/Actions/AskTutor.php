@@ -38,6 +38,7 @@ class AskTutor
         $completion = $this->requestAiCompletion->handle(
             apiKey: $this->resolveAiKey->handle(),
             model: $level->chatModel(),
+            reasoningEffort: $level->chatReasoningEffort(),
             instructions: file_get_contents(resource_path('prompts/tutor.md')),
             messages: [
                 ['role' => 'developer', 'content' => 'Context: '.json_encode($this->context($learner, $savedTopic, $draft))],
