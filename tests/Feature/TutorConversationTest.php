@@ -78,7 +78,9 @@ class TutorConversationTest extends TestCase
                 && $request['model'] === config('ai.levels.low.chat_model')
                 && $request['safety_identifier'] === $learner->aiSafetyIdentifier()
                 && $request['response_format']['json_schema']['strict'] === true
-                && $context['learner']['name'] === 'Ada'
+                // The provider never learns who the learner is: no name, only the safety identifier.
+                && ! array_key_exists('name', $context['learner'])
+                && ! str_contains($request['messages'][1]['content'], 'Ada')
                 && $context['learner']['role'] === 'career_switcher'
                 && $context['saved_topic'] === null
                 && $request['messages'][2] === ['role' => 'user', 'content' => 'Teach me biomechanics'];
