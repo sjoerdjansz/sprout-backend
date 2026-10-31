@@ -22,7 +22,7 @@ class ResolveAiKey
         if (! is_string($apiKey) || $apiKey === '') {
             Log::error('OPENAI_API_KEY is not set, so the AI can\'t be called.');
 
-            throw AiRequestFailed::unavailable();
+            throw AiRequestFailed::outOfService();
         }
 
         return $apiKey;

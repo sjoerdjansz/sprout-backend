@@ -100,9 +100,11 @@ class RequestAiCompletion
         // learner until someone fixes Sprout's key, so it is an error rather than a warning.
         if ($response->status() === 401 || $response->json('error.type') === 'insufficient_quota') {
             Log::error('The AI provider rejected Sprout\'s key or the account has no credit.', $context);
-        } else {
-            Log::warning('The AI provider answered with an error.', $context);
+
+            throw AiRequestFailed::outOfService();
         }
+
+        Log::warning('The AI provider answered with an error.', $context);
 
         throw AiRequestFailed::unavailable();
     }

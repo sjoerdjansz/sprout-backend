@@ -245,7 +245,7 @@ class TutorConversationTest extends TestCase
         Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.self::SPROUT_API_KEY));
     }
 
-    public function test_without_a_configured_key_the_tutor_is_unavailable_and_nothing_is_sent(): void
+    public function test_without_a_configured_key_the_learner_hears_sprouts_ai_is_out_of_service(): void
     {
         $learner = $this->learnerWithAiConfigured();
         config(['services.openai.key' => null]);
@@ -255,12 +255,12 @@ class TutorConversationTest extends TestCase
         $response = $this->postJson('/api/v1/conversations', ['message' => 'Hi']);
 
         $response->assertServiceUnavailable()
-            ->assertExactJson(['message' => "The tutor can't answer right now. Try again in a moment."]);
+            ->assertExactJson(['message' => "Sprout's AI isn't working right now. We're fixing it, so try again later."]);
         $this->assertDatabaseCount('study_sessions', 0);
         Http::assertNothingSent();
     }
 
-    public function test_a_rejected_key_or_missing_credit_is_logged_and_the_learner_can_try_again(): void
+    public function test_a_rejected_key_or_missing_credit_is_logged_and_shown_as_out_of_service(): void
     {
         Sanctum::actingAs($this->learnerWithAiConfigured());
         Log::spy();
@@ -268,8 +268,9 @@ class TutorConversationTest extends TestCase
             ->push(['error' => ['message' => 'Incorrect API key provided.', 'type' => 'invalid_request_error']], 401)
             ->push(['error' => ['message' => 'You have no credits remaining.', 'type' => 'insufficient_quota']], 429)]);
 
-        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable();
-        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable();
+        $outOfService = ['message' => "Sprout's AI isn't working right now. We're fixing it, so try again later."];
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable()->assertExactJson($outOfService);
+        $this->postJson('/api/v1/conversations', ['message' => 'Hi'])->assertServiceUnavailable()->assertExactJson($outOfService);
 
         $this->assertDatabaseCount('study_sessions', 0);
         Log::shouldHaveReceived('error')->twice();

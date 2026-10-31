@@ -6,9 +6,8 @@ use Illuminate\Http\JsonResponse;
 use RuntimeException;
 
 /**
- * The tutor couldn't get an answer from the AI provider. Sprout uses its own key, so whatever the cause
- * (a key problem, no credit, the provider being down), the learner can only try again: always a 503.
- * The cause is logged where it is detected.
+ * The AI couldn't answer. Sprout uses its own key, so the learner can never fix the cause: always a 503,
+ * logged where it is detected. The message only differs in when trying again makes sense.
  *
  * Changed 2026-10-31: key problems used to be a 422 on `ai_key`, when learners brought their own key.
  */
@@ -19,9 +18,21 @@ class AiRequestFailed extends RuntimeException
         parent::__construct($message);
     }
 
+    /**
+     * A passing problem (the provider slow, busy or down, or an unusable answer): trying again soon usually works.
+     */
     public static function unavailable(): self
     {
         return new self("The tutor can't answer right now. Try again in a moment.");
+    }
+
+    /**
+     * Sprout's own key is missing, rejected or out of credit. Nothing works until the developer fixes it,
+     * so the learner is told not to keep retrying.
+     */
+    public static function outOfService(): self
+    {
+        return new self("Sprout's AI isn't working right now. We're fixing it, so try again later.");
     }
 
     public function render(): JsonResponse
