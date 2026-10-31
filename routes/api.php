@@ -15,9 +15,11 @@ use App\Http\Controllers\Flashcards\DeleteFlashcardController;
 use App\Http\Controllers\Flashcards\ListFlashcardsController;
 use App\Http\Controllers\Flashcards\PauseFlashcardController;
 use App\Http\Controllers\Flashcards\ResumeFlashcardController;
+use App\Http\Controllers\Flashcards\ReviewFlashcardController;
 use App\Http\Controllers\Flashcards\StoreFlashcardController;
 use App\Http\Controllers\Flashcards\UpdateFlashcardController;
 use App\Http\Controllers\KnowledgeMap\DeleteSubtopicController;
+use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
 use App\Http\Controllers\KnowledgeMap\ListTopicsController;
@@ -26,6 +28,12 @@ use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateSubtopicController;
 use App\Http\Controllers\KnowledgeMap\UpdateTopicController;
+use App\Http\Controllers\Practice\FinishPracticeSessionController;
+use App\Http\Controllers\Practice\ListSubtopicPracticeSessionsController;
+use App\Http\Controllers\Practice\SendPracticeMessageController;
+use App\Http\Controllers\Practice\ShowCurrentPracticeSessionController;
+use App\Http\Controllers\Practice\StartPracticeSessionController;
+use App\Http\Controllers\Questions\AnswerQuestionController;
 use App\Http\Controllers\Questions\DeleteQuestionController;
 use App\Http\Controllers\Questions\ListQuestionsController;
 use App\Http\Controllers\Settings\ConfirmEmailChangeController;
@@ -124,6 +132,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{subtopic}/flashcards', ListFlashcardsController::class)->whereNumber('subtopic')->name('flashcards.index');
         Route::post('/{subtopic}/flashcards', StoreFlashcardController::class)->whereNumber('subtopic')->name('flashcards.store');
         Route::get('/{subtopic}/questions', ListQuestionsController::class)->whereNumber('subtopic')->name('questions.index');
+        Route::get('/{subtopic}/practice-sessions', ListSubtopicPracticeSessionsController::class)->whereNumber('subtopic')->name('practice-sessions.index');
+        // Explanations are checked by the AI, like open answers, so they share that rate limit.
+        Route::post('/{subtopic}/explanations', ExplainSubtopicController::class)
+            ->whereNumber('subtopic')
+            ->middleware('throttle:answer-questions')
+            ->name('explanations.store');
     });
 
     Route::prefix('flashcards')->name('flashcards.')->group(function () {
@@ -131,7 +145,24 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{flashcard}', DeleteFlashcardController::class)->whereNumber('flashcard')->name('destroy');
         Route::post('/{flashcard}/pause', PauseFlashcardController::class)->whereNumber('flashcard')->name('pause');
         Route::post('/{flashcard}/resume', ResumeFlashcardController::class)->whereNumber('flashcard')->name('resume');
+        Route::post('/{flashcard}/reviews', ReviewFlashcardController::class)->whereNumber('flashcard')->name('reviews.store');
     });
 
     Route::delete('/questions/{question}', DeleteQuestionController::class)->whereNumber('question')->name('questions.destroy');
+    // Practice sessions (specs/practice-session.md).
+    Route::prefix('practice-sessions')->name('practice-sessions.')->group(function () {
+        Route::post('/', StartPracticeSessionController::class)->name('store');
+        Route::get('/current', ShowCurrentPracticeSessionController::class)->name('current');
+        Route::post('/{practiceSession}/finish', FinishPracticeSessionController::class)->whereNumber('practiceSession')->name('finish');
+        Route::post('/{practiceSession}/messages', SendPracticeMessageController::class)
+            ->whereNumber('practiceSession')
+            ->middleware('throttle:tutor-messages')
+            ->name('messages.store');
+    });
+
+    // Open answers are checked by the AI, so answering has a rate limit of its own.
+    Route::post('/questions/{question}/answers', AnswerQuestionController::class)
+        ->whereNumber('question')
+        ->middleware('throttle:answer-questions')
+        ->name('questions.answers.store');
 });

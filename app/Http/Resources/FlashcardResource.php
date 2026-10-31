@@ -11,7 +11,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * A flashcard on the subtopic page, with its schedule (see SummariseFlashcard).
  *
- * @property array{flashcard: Flashcard, schedule: array{paused: bool, is_due: bool, due_on: string, last_rating: ?ReviewRating, last_reviewed_at: ?CarbonInterface, recall: ?int}} $resource
+ * @property array{flashcard: Flashcard, schedule: array{paused: bool, is_due: bool, due_on: string, last_rating: ?ReviewRating, last_reviewed_at: ?CarbonInterface, recall: ?int, next_review_in_minutes: array{again: int, hard: int, good: int, easy: int}}} $resource
  */
 class FlashcardResource extends JsonResource
 {
@@ -37,6 +37,7 @@ class FlashcardResource extends JsonResource
             'last_rating' => $schedule['last_rating']?->value,
             'last_reviewed_at' => $schedule['last_reviewed_at'],
             'recall' => $schedule['recall'],
+            'next_review_in_minutes' => $schedule['next_review_in_minutes'],
             'created_at' => $flashcard->created_at,
         ];
     }

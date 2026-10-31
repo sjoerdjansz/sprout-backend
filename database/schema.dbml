@@ -38,6 +38,26 @@
 // - Sprout uses its own AI key, not the learner's: ai_credentials is unused and can be dropped later.
 // - Deleting an account removes the user row (everything cascades), its Sanctum tokens and its uploaded files.
 // - Every AI call that answers is logged in ai_calls, so usage is counted per learner and per kind of call.
+//
+// Decisions (2026-10-31, specs/practice-session.md):
+// - Rating a card updates its SM-2 state (Anki-like: again = 10 minutes and start over, then 1 day, 3 days,
+//   interval x ease) and adds a flashcard_reviews row. No new columns.
+// - Every review and graded answer recalculates subtopic_progress.mastery: the average of the three facets,
+//   a facet not practised yet counting as 0. peak_mastery keeps the highest value.
+// - daily_activities is written by practice: 1 XP per card rated, 2 per question answered, right or wrong.
+// - Only a question's outcome counts: a wrong first multiple choice pick is an answer without a score (ignored like
+//   any ungraded answer); right on the second try scores 60 with is_correct false, like a card rated hard.
+// - Every answer belongs to a question. An Explain it explanation answers the subtopic's first feynman question; a
+//   subtopic without one gets "Explain <subtopic> as if I'm 12." (origin ai) when it is first explained. Only the
+//   first version is scored (it counts for the explain facet, 10 XP); the simpler second version has feedback and
+//   gaps but no score.
+// - A practice session is a review study_session with its subtopic, plan and mastery before and after. Ratings,
+//   answers and explanations point to it through study_session_id, so its totals and XP are worked out from them.
+//   One session is open at a time: starting one finishes the open one, and finishing an empty one deletes it.
+//   It can be resumed until the end of the day it started (learner's timezone). Reset progress deletes them.
+// - The streak is the run of consecutive daily_activities dates ending today, or yesterday while today isn't over.
+// - The open session of a practice session is messages on that review session (with a technique per tutor turn),
+//   so it never shows in the chat history. Its tutor knows the scope's cards and open questions, weakest first.
 
 Project sprout {
   database_type: 'MySQL'
@@ -205,8 +225,8 @@ Table ai_calls {
 
 Enum ai_call_kind {
   tutor_reply
-  answer_check [note: 'Practice Hub; not logged yet']
-  explain_feedback [note: 'Practice Hub; not logged yet']
+  answer_check [note: 'An open answer checked in the retrieval quiz']
+  explain_feedback [note: 'An Explain it explanation checked in practice, first or second version']
   card_generation
 }
 
@@ -286,20 +306,24 @@ Enum material_status {
 Table study_sessions {
   id bigint [pk, increment]
   user_id bigint [not null, ref: > users.id]
-  topic_id bigint [null, ref: > topics.id, note: 'Null for a mixed (interleaved) review session. Cascades: deleting a topic deletes its sessions']
+  topic_id bigint [null, ref: > topics.id, note: 'Learn sessions: null until saved. Review sessions: the topic practised. Cascades: deleting a topic deletes its sessions']
+  subtopic_id bigint [null, ref: > subtopics.id, note: 'Review sessions: the subtopic practised; null for a whole topic']
   kind session_kind [not null]
   draft json [null, note: 'Learn sessions: the tutor\'s draft of the topic {title, goal {description, deadline, recall_percentage}, subtopics [{title, content}]}']
+  plan json [null, note: 'Review sessions: {modes, card_ids, question_ids, explain_subtopic_id} as the frontend picked them, so a reload can resume']
+  mastery_before json [null, note: 'Review sessions: {subtopic_id: mastery} of the scope\'s subtopics when it started']
+  mastery_after json [null, note: 'Review sessions: the same when it was finished; null while it is open']
   started_at timestamp [not null]
-  ended_at timestamp [null, note: 'Learn sessions: set when saved to the knowledge map; read-only after that']
+  ended_at timestamp [null, note: 'Learn sessions: set when saved to the knowledge map; read-only after that. Review sessions: set when finished or replaced by a new one']
   created_at timestamp
   updated_at timestamp
 
-  Note: 'BUILT. One chat conversation ("conversation" in the API for learn sessions). topic_id is null for a mixed review, and for a learn session until it is saved.'
+  Note: 'BUILT. A learn session is a conversation with the tutor ("conversation" in the API). A review session is a practice session ("practice session" in the API): its flashcard_reviews, answers and messages point to it, and its totals are worked out from them.'
 }
 
 Enum session_kind {
-  learn
-  review
+  learn [note: 'A conversation exploring a topic with the tutor']
+  review [note: 'A practice session on a topic or one of its subtopics']
 }
 
 Table messages {
@@ -307,7 +331,7 @@ Table messages {
   study_session_id bigint [not null, ref: > study_sessions.id]
   role message_role [not null]
   content text [not null]
-  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI). Practice sessions only: null in a conversation with the tutor']
+  technique technique [null, note: 'The learning technique this tutor turn applies (the badge in the UI). Practice sessions (review) only: null in a conversation with the tutor']
   model varchar(100) [null, note: 'Tutor turns: the AI model that wrote it']
   input_tokens int [null, note: 'Tutor turns: tokens billed to the learner\'s key']
   output_tokens int [null]
@@ -430,10 +454,10 @@ Table answers {
   study_session_id bigint [null, ref: > study_sessions.id, note: 'Set null when the session is deleted']
   question_option_id bigint [null, ref: > question_options.id, note: 'The chosen option (multiple_choice)']
   response text [null, note: 'The typed answer or explanation (open, feynman)']
-  score smallint [null, note: '0-100; null until graded']
-  is_correct boolean [null]
+  score smallint [null, note: '0-100; null until graded, and for a wrong first multiple choice pick (another try follows). Right on the second try is 60']
+  is_correct boolean [null, note: 'Right first time (multiple choice), or covering everything essential (open, from the AI)']
   feedback text [null, note: 'Tutor feedback: what was right, the missing piece, what next']
-  gaps json [null, note: 'Feynman: the gaps the tutor highlighted']
+  gaps json [null, note: 'Feynman: [{text, note}], text quoted exactly from response, note a question']
   answered_at timestamp [not null]
   created_at timestamp
   updated_at timestamp
@@ -459,7 +483,7 @@ Table subtopic_progress {
     (user_id, subtopic_id) [unique]
   }
 
-  Note: 'BUILT. Derived: recalculated from flashcard_reviews and answers after each one. Topic mastery = aggregate of its subtopics.'
+  Note: 'BUILT. Derived: recalculated after each card review and graded answer (RecalculateSubtopicMastery): mastery = average of the cards, explain and quiz facets, a facet not practised counting as 0. Topic mastery = aggregate of its subtopics.'
 }
 
 Table daily_activities {
@@ -476,5 +500,5 @@ Table daily_activities {
     (user_id, activity_date) [unique]
   }
 
-  Note: 'BUILT. Derived: one row per active day. Streaks are consecutive dates, total XP is the sum.'
+  Note: 'BUILT. Derived: one row per active day, written by practice (RecordPracticeActivity): 1 XP per card rated, 2 per question answered, 10 per Explain it (first version). Streaks are consecutive dates, total XP is the sum.'
 }

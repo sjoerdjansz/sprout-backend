@@ -80,6 +80,9 @@ class AskTutor
     }
 
     /**
+     * What the tutor knows about the learner and the topic. No name, email or id: the provider doesn't
+     * need to know who the learner is.
+     *
      * @param  array<string, mixed>  $draft
      * @return array<string, mixed>
      */
@@ -88,7 +91,6 @@ class AskTutor
         return [
             'today' => now()->toDateString(),
             'learner' => [
-                'name' => $learner->name,
                 'role' => $learner->settings?->learner_role?->value,
                 'interests' => $learner->settings?->interests?->map(fn (Interest $interest): string => $interest->value)->values() ?? [],
                 'categories' => $learner->categories()->orderBy('id')->pluck('name'),

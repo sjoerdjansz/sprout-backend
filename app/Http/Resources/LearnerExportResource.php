@@ -116,7 +116,9 @@ class LearnerExportResource extends JsonResource
             'conversations' => $this->studySessions->map(fn (StudySession $session): array => [
                 'id' => $session->id,
                 'topic_id' => $session->topic_id,
+                'subtopic_id' => $session->subtopic_id,
                 'kind' => $session->kind->value,
+                'plan' => $session->plan,
                 'started_at' => $session->started_at,
                 'ended_at' => $session->ended_at,
                 'messages' => $session->messages->map(fn (Message $message): array => [

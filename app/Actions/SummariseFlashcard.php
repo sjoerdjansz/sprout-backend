@@ -17,8 +17,10 @@ class SummariseFlashcard
     /** SM-2 schedules a card for the moment recall has dropped to about 90%. */
     private const RECALL_AT_DUE = 0.9;
 
+    public function __construct(private ScheduleFlashcard $scheduleFlashcard) {}
+
     /**
-     * @return array{paused: bool, is_due: bool, due_on: string, last_rating: ?ReviewRating, last_reviewed_at: ?CarbonInterface, recall: ?int}
+     * @return array{paused: bool, is_due: bool, due_on: string, last_rating: ?ReviewRating, last_reviewed_at: ?CarbonInterface, recall: ?int, next_review_in_minutes: array{again: int, hard: int, good: int, easy: int}}
      */
     public function handle(Flashcard $flashcard, string $timezone): array
     {
@@ -37,7 +39,25 @@ class SummariseFlashcard
             'last_rating' => $lastReview?->rating,
             'last_reviewed_at' => $lastReview?->reviewed_at,
             'recall' => $recall === null ? null : (int) round($recall * 100),
+            'next_review_in_minutes' => $this->minutesUntilNextReview($flashcard, $now),
         ];
+    }
+
+    /**
+     * When the card would come back after each rating, so the rating bar can say "10 min · 3 days".
+     *
+     * @return array{again: int, hard: int, good: int, easy: int}
+     */
+    private function minutesUntilNextReview(Flashcard $flashcard, CarbonImmutable $now): array
+    {
+        $minutes = [];
+
+        foreach (ReviewRating::cases() as $rating) {
+            $dueAt = $this->scheduleFlashcard->handle($flashcard, $rating, $now)['due_at'];
+            $minutes[$rating->value] = (int) round($now->diffInMinutes($dueAt));
+        }
+
+        return $minutes;
     }
 
     /**

@@ -3,7 +3,8 @@
 namespace App\Enums;
 
 /**
- * A learn session studies one topic; a review session mixes due cards across topics.
+ * A learn session is a conversation exploring a topic with the tutor; a review session is a practice
+ * session (specs/practice-session.md) on a topic or one of its subtopics.
  */
 enum SessionKind: string
 {
