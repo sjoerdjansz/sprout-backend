@@ -29,6 +29,7 @@ class KnowledgeMapSubtopicResource extends JsonResource
             'title' => $subtopic->title,
             'description' => $subtopic->description,
             'notes' => $subtopic->content,
+            'generation_status' => $subtopic->generation_status,
             'mastery' => $progress['mastery'],
             'due_cards' => $progress['due_cards'],
             'next_review_on' => $progress['next_review_on'],
