@@ -14,6 +14,7 @@ use App\Models\Question;
 use App\Models\StudySession;
 use App\Models\Subtopic;
 use App\Models\SubtopicProgress;
+use App\Models\SubtopicSource;
 use App\Models\Topic;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -151,6 +152,7 @@ class TopicsTest extends TestCase
         $learner = User::factory()->create();
         $topic = Topic::factory()->for($learner)->create();
         $subtopic = Subtopic::factory()->for($topic)->create();
+        $ownNotes = SubtopicSource::factory()->own()->for($subtopic)->create();
         $flashcard = Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create();
         $question = Question::factory()->for($topic)->for($subtopic)->create();
         $practiceSession = StudySession::factory()->for($learner)->for($topic)->create(['kind' => SessionKind::Review]);
@@ -175,7 +177,7 @@ class TopicsTest extends TestCase
 
         $this->deleteJson("/api/v1/topics/{$topic->id}")->assertNoContent();
 
-        foreach ([$topic, $subtopic, $flashcard, $question, $practiceSession, $conversation, $message, $unsavedConversation, $savedFile, $fileInUnsavedConversation] as $model) {
+        foreach ([$topic, $subtopic, $ownNotes, $flashcard, $question, $practiceSession, $conversation, $message, $unsavedConversation, $savedFile, $fileInUnsavedConversation] as $model) {
             $this->assertModelMissing($model);
         }
         $this->assertDatabaseCount('flashcard_reviews', 0);
