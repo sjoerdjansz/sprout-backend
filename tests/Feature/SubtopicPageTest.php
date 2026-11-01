@@ -112,12 +112,17 @@ class SubtopicPageTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_deleting_a_subtopic_removes_its_cards_questions_answers_and_progress(): void
+    public function test_deleting_a_subtopic_removes_its_cards_questions_answers_sources_sessions_and_progress(): void
     {
         $learner = User::factory()->create();
         $topic = Topic::factory()->for($learner)->create();
         $subtopic = Subtopic::factory()->for($topic)->create();
         $otherSubtopic = Subtopic::factory()->for($topic)->create();
+        $ownNotes = SubtopicSource::factory()->own()->for($subtopic)->create();
+        $file = Material::factory()->for($topic)->create();
+        $filePart = SubtopicSource::factory()->file($file)->for($subtopic)->create();
+        $subtopicPractice = StudySession::factory()->for($learner)->for($topic)->create(['kind' => SessionKind::Review, 'subtopic_id' => $subtopic->id]);
+        $topicPractice = StudySession::factory()->for($learner)->for($topic)->create(['kind' => SessionKind::Review]);
         $flashcard = Flashcard::factory()->for($learner)->for($topic)->for($subtopic)->create();
         FlashcardReview::factory()->for($flashcard)->create();
         $question = Question::factory()->for($topic)->for($subtopic)->create();
@@ -131,6 +136,12 @@ class SubtopicPageTest extends TestCase
         $this->assertModelMissing($subtopic);
         $this->assertModelMissing($flashcard);
         $this->assertModelMissing($question);
+        $this->assertModelMissing($ownNotes);
+        $this->assertModelMissing($filePart);
+        $this->assertModelMissing($subtopicPractice);
+        // The file belongs to the topic, and its other subtopics may have parts of it.
+        $this->assertModelExists($file);
+        $this->assertModelExists($topicPractice);
         $this->assertDatabaseCount('flashcard_reviews', 0);
         $this->assertDatabaseCount('answers', 0);
         $this->assertDatabaseCount('subtopic_progress', 0);
