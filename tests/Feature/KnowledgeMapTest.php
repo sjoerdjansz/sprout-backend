@@ -166,6 +166,73 @@ class KnowledgeMapTest extends TestCase
         $this->getJson('/api/v1/topics')->assertUnauthorized();
     }
 
+    public function test_a_topic_page_shows_the_topic_with_its_subtopics_in_order(): void
+    {
+        $learner = $this->learner();
+        $topic = Topic::factory()->for($learner)->create(['title' => 'Photosynthesis', 'description' => 'How plants make sugar.']);
+        Subtopic::factory()->for($topic)->create(['title' => 'Calvin cycle', 'position' => 2]);
+        $first = Subtopic::factory()->for($topic)->withOwnNotes('Red and blue.')->create(['title' => 'Light', 'position' => 1]);
+        Subtopic::factory()->for(Topic::factory()->for($learner))->create(['title' => 'Another topic']);
+        Sanctum::actingAs($learner);
+
+        $response = $this->getJson("/api/v1/topics/{$topic->id}/subtopics");
+
+        $response->assertOk()
+            ->assertJsonPath('id', $topic->id)
+            ->assertJsonPath('title', 'Photosynthesis')
+            ->assertJsonPath('description', 'How plants make sugar.')
+            ->assertJsonPath('category', ['id' => $topic->category_id, 'name' => $topic->category->name])
+            ->assertJsonCount(2, 'subtopics')
+            ->assertJsonPath('subtopics.0.id', $first->id)
+            ->assertJsonPath('subtopics.0.notes', 'Red and blue.')
+            ->assertJsonPath('subtopics.0.source_count', 1)
+            ->assertJsonPath('subtopics.0.is_new', true)
+            ->assertJsonPath('subtopics.1.title', 'Calvin cycle');
+    }
+
+    public function test_a_topic_page_shows_your_progress_on_each_subtopic(): void
+    {
+        $learner = $this->learner();
+        [$subtopic] = $this->subtopics($learner, 1);
+        $this->reviewCard($learner, $subtopic, [[0, ReviewRating::Good]]);
+        Sanctum::actingAs($learner);
+
+        $fromLibrary = $this->getJson('/api/v1/topics')->assertOk()->json('0.subtopics.0');
+
+        $this->getJson("/api/v1/topics/{$subtopic->topic_id}/subtopics")
+            ->assertOk()
+            ->assertJsonPath('subtopics.0', $fromLibrary)
+            ->assertJsonPath('subtopics.0.is_new', false);
+    }
+
+    public function test_a_topic_without_subtopics_has_an_empty_list(): void
+    {
+        $learner = $this->learner();
+        $topic = Topic::factory()->for($learner)->create();
+        Sanctum::actingAs($learner);
+
+        $this->getJson("/api/v1/topics/{$topic->id}/subtopics")
+            ->assertOk()
+            ->assertJsonPath('subtopics', []);
+    }
+
+    public function test_you_cannot_see_someone_elses_topic_page(): void
+    {
+        $topic = Topic::factory()->create();
+        Subtopic::factory()->for($topic)->create();
+        Sanctum::actingAs($this->learner());
+
+        $this->getJson("/api/v1/topics/{$topic->id}/subtopics")->assertNotFound();
+        $this->getJson('/api/v1/topics/999999/subtopics')->assertNotFound();
+    }
+
+    public function test_a_topic_page_needs_a_token(): void
+    {
+        $topic = Topic::factory()->create();
+
+        $this->getJson("/api/v1/topics/{$topic->id}/subtopics")->assertUnauthorized();
+    }
+
     private function learner(string $timezone = 'UTC'): User
     {
         $learner = User::factory()->create();

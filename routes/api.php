@@ -28,6 +28,7 @@ use App\Http\Controllers\KnowledgeMap\ExplainSubtopicController;
 use App\Http\Controllers\KnowledgeMap\GenerateMoreMaterialController;
 use App\Http\Controllers\KnowledgeMap\ListCategoriesController;
 use App\Http\Controllers\KnowledgeMap\ListTopicsController;
+use App\Http\Controllers\KnowledgeMap\ListTopicSubtopicsController;
 use App\Http\Controllers\KnowledgeMap\ShowSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreSubtopicController;
 use App\Http\Controllers\KnowledgeMap\StoreTopicController;
@@ -138,6 +139,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->whereNumber('topic')
             ->middleware('throttle:suggest-subtopics')
             ->name('subtopic-suggestions.store');
+        // A topic's own page: the topic with all its subtopics (specs/topics.md).
+        Route::get('/{topic}/subtopics', ListTopicSubtopicsController::class)
+            ->whereNumber('topic')
+            ->name('subtopics.index');
         // One request adds them all, so it counts once against the limit for subtopics with notes.
         Route::post('/{topic}/subtopics', AddSubtopicsController::class)
             ->whereNumber('topic')
